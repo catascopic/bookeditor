@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-blockquote@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as r,wrappingInputRule as n,mergeAttributes as u}from"/npm/@tiptap/core@2.27.3/+esm";const e=/^\s*>\s$/,o=r.create({name:"blockquote",addOptions(){return{HTMLAttributes:{}}},content:"block+",group:"block",defining:!0,parseHTML(){return[{tag:"blockquote"}]},renderHTML({HTMLAttributes:t}){return["blockquote",u(this.options.HTMLAttributes,t),0]},addCommands(){return{setBlockquote:()=>({commands:t})=>t.wrapIn(this.name),toggleBlockquote:()=>({commands:t})=>t.toggleWrap(this.name),unsetBlockquote:()=>({commands:t})=>t.lift(this.name)}},addKeyboardShortcuts(){return{"Mod-Shift-b":()=>this.editor.commands.toggleBlockquote()}},addInputRules(){return[n({find:e,type:this.type})]}});export{o as Blockquote,o as default,e as inputRegex};
+//# sourceMappingURL=/sm/e95d6b082ba8470167c22146d0bc6feac57fdc4fc7379c98fa0cf3ca9ce99899.map

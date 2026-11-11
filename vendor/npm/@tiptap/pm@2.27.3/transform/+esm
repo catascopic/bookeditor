@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/pm@2.27.3/transform/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+export*from"/npm/prosemirror-transform@1.12.1/+esm";
+//# sourceMappingURL=/sm/4206be49bbacefb445135a8984c685af15d86b4c80a6a209add49deeea114e06.map

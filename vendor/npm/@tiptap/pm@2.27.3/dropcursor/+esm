@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/pm@2.27.3/dropcursor/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+export*from"/npm/prosemirror-dropcursor@1.8.3/+esm";
+//# sourceMappingURL=/sm/b12afe579e90c3e92cef6e45a362fcb84ae8a1b8e567d34125e706ba39d705bd.map

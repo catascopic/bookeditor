@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/pm@2.27.3/keymap/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+export*from"/npm/prosemirror-keymap@1.2.3/+esm";
+//# sourceMappingURL=/sm/22edc757e2a52f62bb7e5801e2f7cec11ec5c43a327c6426308d47fd8a38b141.map

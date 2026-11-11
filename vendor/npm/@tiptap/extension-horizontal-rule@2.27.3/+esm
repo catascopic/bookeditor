@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-horizontal-rule@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as m,nodeInputRule as h,canInsertNode as A,isNodeSelection as T,mergeAttributes as y}from"/npm/@tiptap/core@2.27.3/+esm";import{TextSelection as i,NodeSelection as S}from"/npm/@tiptap/pm@2.27.3/state/+esm";const u=m.create({name:"horizontalRule",addOptions(){return{HTMLAttributes:{}}},group:"block",parseHTML(){return[{tag:"hr"}]},renderHTML({HTMLAttributes:n}){return["hr",y(this.options.HTMLAttributes,n)]},addCommands(){return{setHorizontalRule:()=>({chain:n,state:s})=>{if(!A(s,s.schema.nodes[this.name]))return!1;const{selection:c}=s,{$from:a,$to:l}=c,o=n();return a.parentOffset===0?o.insertContentAt({from:Math.max(a.pos-1,0),to:l.pos},{type:this.name}):T(c)?o.insertContentAt(l.pos,{type:this.name}):o.insertContent({type:this.name}),o.command(({tr:e,dispatch:f})=>{var r;if(f){const{$to:t}=e.selection,d=t.end();if(t.nodeAfter)t.nodeAfter.isTextblock?e.setSelection(i.create(e.doc,t.pos+1)):t.nodeAfter.isBlock?e.setSelection(S.create(e.doc,t.pos)):e.setSelection(i.create(e.doc,t.pos));else{const p=(r=t.parent.type.contentMatch.defaultType)===null||r===void 0?void 0:r.create();p&&(e.insert(d,p),e.setSelection(i.create(e.doc,d+1)))}e.scrollIntoView()}return!0}).run()}}},addInputRules(){return[h({find:/^(?:---|—-|___\s|\*\*\*\s)$/,type:this.type})]}});export{u as HorizontalRule,u as default};
+//# sourceMappingURL=/sm/73e176cfdfd2a68e17d522ea8ee4c9aed27d4b47cf97dd7dd368c805442e31c3.map

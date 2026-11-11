@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-text@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as t}from"/npm/@tiptap/core@2.27.3/+esm";const e=t.create({name:"text",group:"inline"});export{e as Text,e as default};
+//# sourceMappingURL=/sm/f37580c7902a71fe3de722cb55a947a50a5fee1e8c96df74b490ed8eabf4a25d.map

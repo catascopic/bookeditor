@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-bullet-list@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as n,wrappingInputRule as s,mergeAttributes as p}from"/npm/@tiptap/core@2.27.3/+esm";const u="listItem",i="textStyle",e=/^\s*([-+*])\s$/,r=n.create({name:"bulletList",addOptions(){return{itemTypeName:"listItem",HTMLAttributes:{},keepMarks:!1,keepAttributes:!1}},group:"block list",content(){return`${this.options.itemTypeName}+`},parseHTML(){return[{tag:"ul"}]},renderHTML({HTMLAttributes:t}){return["ul",p(this.options.HTMLAttributes,t),0]},addCommands(){return{toggleBulletList:()=>({commands:t,chain:o})=>this.options.keepAttributes?o().toggleList(this.name,this.options.itemTypeName,this.options.keepMarks).updateAttributes(u,this.editor.getAttributes(i)).run():t.toggleList(this.name,this.options.itemTypeName,this.options.keepMarks)}},addKeyboardShortcuts(){return{"Mod-Shift-8":()=>this.editor.commands.toggleBulletList()}},addInputRules(){let t=s({find:e,type:this.type});return(this.options.keepMarks||this.options.keepAttributes)&&(t=s({find:e,type:this.type,keepMarks:this.options.keepMarks,keepAttributes:this.options.keepAttributes,getAttributes:()=>this.editor.getAttributes(i),editor:this.editor})),[t]}});export{r as BulletList,r as default,e as inputRegex};
+//# sourceMappingURL=/sm/f2e1eab9677a405ee6ab85e47471af4d9ef6f831fb2fc6248585e1e7e85fa5bb.map

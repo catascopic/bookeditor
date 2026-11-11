@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/prosemirror-keymap@1.2.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{keyName as c,base as d}from"/npm/w3c-keyname@2.2.8/+esm";import{Plugin as p}from"/npm/prosemirror-state@1.4.4/+esm";const y=typeof navigator<"u"&&/Mac|iP(hone|[oa]d)/.test(navigator.platform),m=typeof navigator<"u"&&/Win/.test(navigator.platform);function h(e){let r=e.split(/-(?!$)/),t=r[r.length-1];t=="Space"&&(t=" ");let i,f,o,a;for(let l=0;l<r.length-1;l++){let s=r[l];if(/^(cmd|meta|m)$/i.test(s))a=!0;else if(/^a(lt)?$/i.test(s))i=!0;else if(/^(c|ctrl|control)$/i.test(s))f=!0;else if(/^s(hift)?$/i.test(s))o=!0;else if(/^mod$/i.test(s))y?a=!0:f=!0;else throw new Error("Unrecognized modifier name: "+s)}return i&&(t="Alt-"+t),f&&(t="Ctrl-"+t),a&&(t="Meta-"+t),o&&(t="Shift-"+t),t}function K(e){let r=Object.create(null);for(let t in e)r[h(t)]=e[t];return r}function n(e,r,t=!0){return r.altKey&&(e="Alt-"+e),r.ctrlKey&&(e="Ctrl-"+e),r.metaKey&&(e="Meta-"+e),t&&r.shiftKey&&(e="Shift-"+e),e}function g(e){return new p({props:{handleKeyDown:u(e)}})}function u(e){let r=K(e);return function(t,i){let f=c(i),o,a=r[n(f,i)];if(a&&a(t.state,t.dispatch,t))return!0;if(f.length==1&&f!=" "){if(i.shiftKey){let l=r[n(f,i,!1)];if(l&&l(t.state,t.dispatch,t))return!0}if((i.altKey||i.metaKey||i.ctrlKey)&&!(m&&i.ctrlKey&&i.altKey)&&(o=d[i.keyCode])&&o!=f){let l=r[n(o,i)];if(l&&l(t.state,t.dispatch,t))return!0}}return!1}}export{u as keydownHandler,g as keymap};
+//# sourceMappingURL=/sm/e8258f3ef67786e8d872e2c804092937e68143f3b2affe2ac4063fd08f11104e.map

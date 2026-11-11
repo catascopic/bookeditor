@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/pm@2.27.3/gapcursor/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+export*from"/npm/prosemirror-gapcursor@1.4.1/+esm";
+//# sourceMappingURL=/sm/bedca7caaa8795ce03f19c9e038e1597b189468c14be10cc97e23aea67882a76.map

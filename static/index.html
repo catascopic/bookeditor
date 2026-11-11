@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book Editor</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/styles.css">
+<script type="importmap">/*IMPORTMAP*/</script>
+</head>
+<body>
+<header class="toolbar">
+	<div class="group">
+		<select id="file" title="Open a document"></select>
+		<button id="new" title="Create a new document">New</button>
+		<button id="save" title="Save (Ctrl+S)">Save</button>
+		<button id="export" title="Save, then write an .rtf file next to the document">Export RTF</button>
+	</div>
+	<div class="group" id="blocks">
+		<span class="label">Block</span>
+		<button data-block="body" title="Regular text">Body</button>
+		<button data-block="chapter" title="Chapter header (Ctrl+Alt+1)">Chapter</button>
+		<button data-block="section" title="Section header (Ctrl+Alt+2)">Section</button>
+		<button data-block="email" title="Quoted email">Email</button>
+		<button data-block="journal" title="Journal entry">Journal</button>
+		<button data-block="code" title="Code block: a separate block of code lines (Ctrl+Alt+C)">Code block</button>
+		<button data-block="dinkus" title="Insert a dinkus (or type --- on an empty line)">✻ ✻ ✻</button>
+	</div>
+	<div class="group" id="marks">
+		<span class="label">Inline</span>
+		<button data-mark="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+		<button data-mark="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+		<button data-mark="code" title="Inline code, within a line of text (Ctrl+E)">code</button>
+	</div>
+	<div class="group right">
+		<select id="zoom" title="Zoom">
+			<option value="1">100%</option>
+			<option value="1.25">125%</option>
+			<option value="1.5">150%</option>
+			<option value="2">200%</option>
+		</select>
+	</div>
+</header>
+<main>
+	<div class="page"><div id="editor"></div></div>
+</main>
+<footer class="status">
+	<span id="status-file"></span>
+	<span id="status-block"></span>
+	<span id="status-words"></span>
+	<span id="status-message"></span>
+</footer>
+<script type="module" src="/static/editor.js"></script>
+</body>
+</html>

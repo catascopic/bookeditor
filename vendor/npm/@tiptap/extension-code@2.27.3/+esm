@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-code@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Mark as d,markPasteRule as n,markInputRule as a,mergeAttributes as o}from"/npm/@tiptap/core@2.27.3/+esm";const t=/(^|[^`])`([^`]+)`(?!`)/,r=/(^|[^`])`([^`]+)`(?!`)/g,s=d.create({name:"code",addOptions(){return{HTMLAttributes:{}}},excludes:"_",code:!0,exitable:!0,parseHTML(){return[{tag:"code"}]},renderHTML({HTMLAttributes:e}){return["code",o(this.options.HTMLAttributes,e),0]},addCommands(){return{setCode:()=>({commands:e})=>e.setMark(this.name),toggleCode:()=>({commands:e})=>e.toggleMark(this.name),unsetCode:()=>({commands:e})=>e.unsetMark(this.name)}},addKeyboardShortcuts(){return{"Mod-e":()=>this.editor.commands.toggleCode()}},addInputRules(){return[a({find:t,type:this.type})]},addPasteRules(){return[n({find:r,type:this.type})]}});export{s as Code,s as default,t as inputRegex,r as pasteRegex};
+//# sourceMappingURL=/sm/9addf7d3b2ae625bb19a2643fb560944a41b33e5b760d7418ccc81d30822d0ff.map

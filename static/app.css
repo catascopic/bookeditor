@@ -1,0 +1,130 @@
+/* The app's chrome. How the document itself looks comes from /styles.css (generated from styles.json). */
+
+:root {
+	--desk: #e9e7e2;
+	--paper: #ffffff;
+	--ink: #1b1b1b;
+	--chrome: #f7f6f3;
+	--line: #d0cdc5;
+	--muted: #6b6860;
+	--accent: #2f5d8a;
+	--accent-soft: #dbe6f1;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+	display: flex;
+	flex-direction: column;
+	background: var(--desk);
+	color: var(--ink);
+	font: 13px/1.3 system-ui, "Segoe UI", sans-serif;
+}
+
+/* ---- toolbar ---- */
+
+.toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 18px;
+	align-items: center;
+	padding: 6px 12px;
+	background: var(--chrome);
+	border-bottom: 1px solid var(--line);
+}
+
+.group { display: flex; align-items: center; gap: 4px; }
+.group.right { margin-left: auto; }
+.label { color: var(--muted); margin-right: 2px; }
+
+button, select {
+	font: inherit;
+	color: inherit;
+	height: 28px;
+	padding: 0 10px;
+	background: var(--paper);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+button:hover, select:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.active { background: var(--accent-soft); border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+.toolbar [data-mark] { min-width: 30px; font-size: 14px; }
+.toolbar [data-mark="code"] { font-size: 12px; background: #f1efea; border-style: dashed; }
+.toolbar [data-mark="code"].active { background: var(--accent-soft); }
+#file { min-width: 180px; max-width: 320px; }
+
+/* ---- page ---- */
+
+main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
+
+.page {
+	margin: 0 auto;
+	padding: 0.9in 1in;
+	box-sizing: content-box;
+	background: var(--paper);
+	box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+	color: #000;
+}
+
+.ProseMirror {
+	outline: none;
+	min-height: 6in;
+	line-height: 1.25;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	font-variant-ligatures: none;
+}
+
+.ProseMirror p, .ProseMirror h1, .ProseMirror h2, .ProseMirror pre, .ProseMirror hr { margin: 0; }
+.ProseMirror div.email > p, .ProseMirror div.journal > p { text-indent: 0; }
+.ProseMirror pre code { font: inherit; }
+.ProseMirror :not(pre) > code { font-size: inherit; }
+.ProseMirror hr { border: 0; height: auto; cursor: default; }
+.ProseMirror hr.ProseMirror-selectednode { background: var(--accent-soft); }
+.ProseMirror .email-from, .ProseMirror .email-to { text-indent: 0; }
+
+/* a faint rule down the side of the block the cursor is in, for emails/journals/code */
+.ProseMirror div.email, .ProseMirror div.journal, .ProseMirror pre { position: relative; }
+.ProseMirror div.email::after, .ProseMirror div.journal::after, .ProseMirror pre::after {
+	content: attr(data-label);
+	position: absolute;
+	left: -0.85in;
+	top: 0;
+	bottom: 0;
+	width: 0.75in;
+	padding-top: inherit;
+	border-right: 2px solid var(--line);
+	color: var(--muted);
+	font: 9px/1.6 system-ui, sans-serif;
+	text-indent: 0;
+	text-align: left;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	pointer-events: none;
+	transform: translateX(calc(0.5in - 6px));
+}
+.ProseMirror pre::after { content: "code"; }
+.ProseMirror div.email::after { content: "email"; }
+.ProseMirror div.journal::after { content: "journal"; }
+
+.ProseMirror-gapcursor { position: relative; }
+
+/* ---- status bar ---- */
+
+.status {
+	display: flex;
+	gap: 18px;
+	padding: 4px 12px;
+	background: var(--chrome);
+	border-top: 1px solid var(--line);
+	color: var(--muted);
+	font-size: 12px;
+}
+#status-message { margin-left: auto; color: var(--ink); }
+#status-message.error { color: #a12626; }

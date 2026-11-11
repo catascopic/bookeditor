@@ -1,0 +1,7 @@
+{
+	"imports": {
+		"@tiptap/core": "/npm/@tiptap/core@2.27.3/+esm",
+		"@tiptap/starter-kit": "/npm/@tiptap/starter-kit@2.27.3/+esm",
+		"@tiptap/pm/state": "/npm/@tiptap/pm@2.27.3/state/+esm"
+	}
+}

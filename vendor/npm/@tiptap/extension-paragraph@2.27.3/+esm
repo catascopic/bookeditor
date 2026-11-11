@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-paragraph@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as e,mergeAttributes as a}from"/npm/@tiptap/core@2.27.3/+esm";const t=e.create({name:"paragraph",priority:1e3,addOptions(){return{HTMLAttributes:{}}},group:"block",content:"inline*",parseHTML(){return[{tag:"p"}]},renderHTML({HTMLAttributes:r}){return["p",a(this.options.HTMLAttributes,r),0]},addCommands(){return{setParagraph:()=>({commands:r})=>r.setNode(this.name)}},addKeyboardShortcuts(){return{"Mod-Alt-0":()=>this.editor.commands.setParagraph()}}});export{t as Paragraph,t as default};
+//# sourceMappingURL=/sm/7f8d352e175ddb50430eeb581c825adc8500520e26b88589e5d9989d15f164ce.map

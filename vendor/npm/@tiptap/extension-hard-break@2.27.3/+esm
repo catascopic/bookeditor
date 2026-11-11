@@ -1,0 +1,9 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-hard-break@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Node as c,mergeAttributes as f}from"/npm/@tiptap/core@2.27.3/+esm";const n=c.create({name:"hardBreak",addOptions(){return{keepMarks:!0,HTMLAttributes:{}}},inline:!0,group:"inline",selectable:!1,linebreakReplacement:!0,parseHTML(){return[{tag:"br"}]},renderHTML({HTMLAttributes:e}){return["br",f(this.options.HTMLAttributes,e)]},renderText(){return`
+`},addCommands(){return{setHardBreak:()=>({commands:e,chain:s,state:a,editor:i})=>e.first([()=>e.exitCode(),()=>e.command(()=>{const{selection:r,storedMarks:o}=a;if(r.$from.parent.type.spec.isolating)return!1;const{keepMarks:d}=this.options,{splittableMarks:u}=i.extensionManager,t=o||r.$to.parentOffset&&r.$from.marks();return s().insertContent({type:this.name}).command(({tr:m,dispatch:p})=>{if(p&&t&&d){const k=t.filter(l=>u.includes(l.type.name));m.ensureMarks(k)}return!0}).run()})])}},addKeyboardShortcuts(){return{"Mod-Enter":()=>this.editor.commands.setHardBreak(),"Shift-Enter":()=>this.editor.commands.setHardBreak()}}});export{n as HardBreak,n as default};
+//# sourceMappingURL=/sm/65023caa5c7360910ccec9079a34f80b9c106eb1e680ec68107ad5b7a95bacc7.map

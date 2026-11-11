@@ -1,0 +1,8 @@
+/**
+ * Bundled by jsDelivr using Rollup v4.62.2 and esbuild v0.28.1.
+ * Original file: /npm/@tiptap/extension-strike@2.27.3/dist/index.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+import{Mark as n,markPasteRule as a,markInputRule as i,mergeAttributes as u}from"/npm/@tiptap/core@2.27.3/+esm";const e=/(?:^|\s)(~~(?!\s+~~)((?:[^~]+))~~(?!\s+~~))$/,r=/(?:^|\s)(~~(?!\s+~~)((?:[^~]+))~~(?!\s+~~))/g,s=n.create({name:"strike",addOptions(){return{HTMLAttributes:{}}},parseHTML(){return[{tag:"s"},{tag:"del"},{tag:"strike"},{style:"text-decoration",consuming:!1,getAttrs:t=>t.includes("line-through")?{}:!1}]},renderHTML({HTMLAttributes:t}){return["s",u(this.options.HTMLAttributes,t),0]},addCommands(){return{setStrike:()=>({commands:t})=>t.setMark(this.name),toggleStrike:()=>({commands:t})=>t.toggleMark(this.name),unsetStrike:()=>({commands:t})=>t.unsetMark(this.name)}},addKeyboardShortcuts(){return{"Mod-Shift-s":()=>this.editor.commands.toggleStrike()}},addInputRules(){return[i({find:e,type:this.type})]},addPasteRules(){return[a({find:r,type:this.type})]}});export{s as Strike,s as default,e as inputRegex,r as pasteRegex};
+//# sourceMappingURL=/sm/0ede040b0defed0e0b8dd8124da51d26944c645e8af1b9604ee4c39fd502ab35.map

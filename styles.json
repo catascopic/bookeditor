@@ -1,0 +1,41 @@
+{
+	"_comment": "The one place formatting lives. Sizes and spacing are in points, indents in inches. Both the editor's on-screen look and the RTF export are generated from this file.",
+
+	"editor": {
+		"column_width_in": 6.0
+	},
+
+	"inline_code": { "font": "IBM Plex Mono", "bold": true },
+
+	"blocks": {
+		"chapter": {
+			"font": "Courier New", "size": 14, "bold": true, "align": "center",
+			"space_before": 10, "space_after": 10
+		},
+		"section": {
+			"font": "Source Serif 4", "size": 12, "italic": true, "align": "center",
+			"space_before": 10, "space_after": 10, "keep_with_next": true
+		},
+		"body": {
+			"font": "Source Serif 4", "size": 10, "first_line_in": 0.5
+		},
+		"dinkus": {
+			"text": "✻ ✻ ✻", "font": "Source Serif 4", "symbol_font": "Segoe UI Symbol", "size": 10, "align": "center",
+			"space_before": 10, "space_after": 10, "keep_with_next": true
+		},
+		"email": {
+			"font": "Source Sans 3", "size": 10, "indent_in": 0.5,
+			"space_before": 12, "space_after": 12, "para_spacing": 12,
+			"header_font": "IBM Plex Mono", "header_bold": true,
+			"from_label": "From: ", "to_label": "  To: "
+		},
+		"journal": {
+			"font": "Courier New", "size": 10, "indent_in": 0.5,
+			"space_before": 10, "space_after": 10, "para_spacing": 10
+		},
+		"code": {
+			"font": "IBM Plex Mono", "size": 10, "bold": true, "indent_in": 0.5,
+			"space_before": 10, "space_after": 10, "keep_with_next": true
+		}
+	}
+}
