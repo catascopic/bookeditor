@@ -18,13 +18,20 @@
 		<button id="export" title="Save, then write an .rtf file next to the document">Export RTF</button>
 	</div>
 	<div class="group" id="blocks">
-		<span class="label">Block</span>
-		<button data-block="body" title="Regular text">Body</button>
-		<button data-block="chapter" title="Chapter header (Ctrl+Alt+1)">Chapter</button>
-		<button data-block="section" title="Section header (Ctrl+Alt+2)">Section</button>
-		<button data-block="email" title="Quoted email">Email</button>
-		<button data-block="journal" title="Journal entry">Journal</button>
-		<button data-block="code" title="Code block: a separate block of code lines (Ctrl+Alt+C)">Code block</button>
+		<span class="label">Style</span>
+		<div class="style-picker">
+			<button id="style-button" aria-haspopup="true" aria-expanded="false" title="The style of the paragraph the cursor is in. Click to change it.">
+				<span id="style-current">Body</span><span class="chevron" aria-hidden="true">▾</span>
+			</button>
+			<div id="style-menu" role="menu" hidden>
+				<button role="menuitem" data-block="body">Body<kbd>Ctrl+Alt+0</kbd></button>
+				<button role="menuitem" data-block="chapter">Chapter<kbd>Ctrl+Alt+1</kbd></button>
+				<button role="menuitem" data-block="section">Section<kbd>Ctrl+Alt+2</kbd></button>
+				<button role="menuitem" data-block="email">Email<kbd>Ctrl+Alt+E</kbd></button>
+				<button role="menuitem" data-block="journal">Journal<kbd>Ctrl+Alt+J</kbd></button>
+				<button role="menuitem" data-block="code">Code block<kbd>Ctrl+Alt+C</kbd></button>
+			</div>
+		</div>
 		<button data-block="figure" title="Insert a picture with a caption (PNG or JPEG). You can also paste or drop one into the text.">Picture</button>
 		<input type="file" id="picture-file" accept="image/png,image/jpeg" hidden>
 		<button data-block="dinkus" title="Insert a dinkus (or type --- on an empty line)">✻ ✻ ✻</button>

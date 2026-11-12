@@ -55,6 +55,44 @@ button:hover, select:hover { border-color: var(--muted); }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.active { background: var(--accent-soft); border-color: var(--accent); }
 button:disabled { opacity: 0.45; cursor: default; }
+/* the style picker: a button naming the current paragraph style, and a menu to change it */
+.toolbar { position: relative; z-index: 2; }
+.style-picker { position: relative; }
+#style-button { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 150px; }
+#style-current { font-size: 14px; }
+#style-button .chevron { color: var(--muted); font-size: 11px; }
+#style-menu {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	display: flex;
+	flex-direction: column;
+	min-width: 240px;
+	margin-top: 4px;
+	padding: 4px;
+	background: var(--paper);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+#style-menu[hidden] { display: none; }
+#style-menu button {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 24px;
+	height: 32px;
+	padding: 0 10px;
+	font-size: 15px;
+	line-height: 32px;
+	text-align: left;
+	border: 0;
+	background: none;
+}
+#style-menu button:hover { background: var(--chrome); }
+#style-menu button.active { background: var(--accent-soft); }
+#style-menu kbd { font: 11px system-ui, "Segoe UI", sans-serif; color: var(--muted); }
+
 .toolbar [data-mark] { min-width: 30px; font-size: 14px; }
 .toolbar [data-mark="code"] { font-size: 12px; background: #f1efea; border-style: dashed; }
 .toolbar [data-mark="code"].active { background: var(--accent-soft); }

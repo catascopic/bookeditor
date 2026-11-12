@@ -428,6 +428,20 @@ const BLOCKS = {
 	},
 }
 
+// Shortcuts for the styles that TipTap doesn't already give one (it has Ctrl+Alt+1, 2 and C).
+// Ctrl+Alt+0 is TipTap's too, but only for plain paragraphs: ours also unwraps emails and journals.
+const StyleShortcuts = Extension.create({
+	name: 'styleShortcuts',
+	priority: 1000,
+	addKeyboardShortcuts() {
+		return {
+			'Mod-Alt-0': () => (BLOCKS.body.run(this.editor), true),
+			'Mod-Alt-e': () => (BLOCKS.email.run(this.editor), true),
+			'Mod-Alt-j': () => (BLOCKS.journal.run(this.editor), true),
+		}
+	},
+})
+
 // ---------------------------------------------------------------- the editor
 
 const $ = id => document.getElementById(id)
@@ -453,6 +467,7 @@ function createEditor(html) {
 			emailField('emailFrom', 'email-from'),
 			emailField('emailTo', 'email-to'),
 			Email,
+			StyleShortcuts,
 			SenderColors,
 			Figure,
 		],
@@ -484,12 +499,22 @@ function createEditor(html) {
 function refreshToolbar() {
 	if (!editor) return
 	let current = ''
+	let currentItem = null
 	for (const button of document.querySelectorAll('[data-block]')) {
 		const block = BLOCKS[button.dataset.block]
 		const active = block.active(editor)
 		button.classList.toggle('active', active)
-		if (active) current = block.label
+		if (active) {
+			current = block.label
+			currentItem = button.closest('#style-menu') ? button : null
+		}
 	}
+	// The style button names the style the cursor is in, drawn in that style's own font.
+	const look = currentItem ? getComputedStyle(currentItem) : null
+	$('style-current').textContent = currentItem?.firstChild.textContent || current || 'No style'
+	Object.assign($('style-current').style, {
+		fontFamily: look?.fontFamily ?? '', fontWeight: look?.fontWeight ?? '', fontStyle: look?.fontStyle ?? '',
+	})
 	for (const button of document.querySelectorAll('[data-mark]')) {
 		const mark = button.dataset.mark
 		button.classList.toggle('active', editor.isActive(mark))
@@ -586,8 +611,28 @@ function recall(key) {
 
 for (const button of document.querySelectorAll('[data-block]')) {
 	button.addEventListener('mousedown', event => event.preventDefault()) // keep the text selection
-	button.addEventListener('click', () => BLOCKS[button.dataset.block].run(editor))
+	button.addEventListener('click', () => {
+		closeStyleMenu()
+		BLOCKS[button.dataset.block].run(editor)
+	})
 }
+
+function closeStyleMenu() {
+	$('style-menu').hidden = true
+	$('style-button').setAttribute('aria-expanded', 'false')
+}
+$('style-button').addEventListener('mousedown', event => event.preventDefault())
+$('style-button').addEventListener('click', () => {
+	const opening = $('style-menu').hidden
+	$('style-menu').hidden = !opening
+	$('style-button').setAttribute('aria-expanded', String(opening))
+})
+document.addEventListener('mousedown', event => {
+	if (!event.target.closest('.style-picker')) closeStyleMenu()
+})
+document.addEventListener('keydown', event => {
+	if (event.key === 'Escape') closeStyleMenu()
+})
 for (const button of document.querySelectorAll('[data-mark]')) {
 	button.addEventListener('mousedown', event => event.preventDefault())
 	button.addEventListener('click', () => editor.chain().focus().toggleMark(button.dataset.mark).run())
