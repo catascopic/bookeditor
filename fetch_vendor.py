@@ -21,6 +21,7 @@ VENDOR = Path(__file__).parent / 'vendor'
 ROOTS = {
 	'@tiptap/core': ('@tiptap/core', '2', ''),
 	'@tiptap/starter-kit': ('@tiptap/starter-kit', '2', ''),
+	'@tiptap/extension-horizontal-rule': ('@tiptap/extension-horizontal-rule', '2', ''),  # for the dinkus shortcut
 	'@tiptap/pm/state': ('@tiptap/pm', '2', '/state'),
 	'@tiptap/pm/view': ('@tiptap/pm', '2', '/view'),
 }

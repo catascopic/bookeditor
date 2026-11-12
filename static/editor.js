@@ -1,4 +1,5 @@
-import { Editor, Extension, Node } from '@tiptap/core'
+import { Editor, Extension, InputRule, Node, nodeInputRule } from '@tiptap/core'
+import { HorizontalRule } from '@tiptap/extension-horizontal-rule'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
@@ -95,6 +96,35 @@ const Email = Node.create({
 			},
 		}
 	},
+})
+
+// ---------------------------------------------------------------- typing shortcuts
+
+// A dinkus is typed as *** alone on a line of body text (--- is an em dash, below). Not in
+// a journal, email or footnote, which can't hold one.
+const Dinkus = HorizontalRule.extend({
+	addInputRules() {
+		const rule = nodeInputRule({ find: /^\*\*\*$/, type: this.type })
+		const insert = rule.handler
+		rule.handler = props => {
+			const $start = props.state.doc.resolve(props.range.from)
+			return $start.depth === 1 && $start.parent.type.name === 'paragraph' ? insert(props) : null
+		}
+		return [rule]
+	},
+})
+
+// -- becomes an en dash and --- an em dash, as in Google Docs: once the next character is
+// typed, which is what lets --- get past --. Backspace straight afterwards puts the hyphens
+// back. (TipTap leaves code blocks and inline code alone.)
+const Dashes = Extension.create({
+	name: 'dashes',
+	addInputRules: () => [new InputRule({
+		find: /(?<!-)(-{2,3})([^-])$/,
+		handler: ({ state, range, match }) => {
+			state.tr.insertText((match[1].length === 2 ? '\u2013' : '\u2014') + match[2], range.from, range.to)
+		},
+	})],
 })
 
 // ---------------------------------------------------------------- footnotes
@@ -816,7 +846,10 @@ function createEditor(html) {
 				orderedList: false,
 				listItem: false,
 				strike: false,
+				horizontalRule: false, // replaced by Dinkus
 			}),
+			Dinkus,
+			Dashes,
 			Journal,
 			emailField('emailFrom', 'email-from'),
 			emailField('emailTo', 'email-to'),
@@ -831,13 +864,6 @@ function createEditor(html) {
 			FootnoteKeeper,
 		],
 		editorProps: {
-			// In a note, typing is only ever text: the shortcuts typed as text (--- for a dinkus, and
-			// the like) would build new blocks there. These props are asked before any plugin is.
-			handleTextInput: (view, from, to, text) => {
-				if (!inFootnote()) return false
-				view.dispatch(view.state.tr.insertText(text, from, to))
-				return true
-			},
 			handleDOMEvents: {
 				// a footnote's number in the text goes to its note, and the note's number comes back
 				click: (view, event) => {
