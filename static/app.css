@@ -210,6 +210,38 @@ main { flex: 1; min-width: 0; overflow: auto; padding: 24px 16px 48px; }
 
 .ProseMirror-gapcursor { position: relative; }
 
+/* Footnotes. A number in the text goes to its note when clicked, and a note's number goes
+   back. The notes start a new page when exported; here a dashed rule marks where. */
+.ProseMirror sup.fnref, .ProseMirror a.fnback { cursor: pointer; user-select: none; }
+/* (.page for weight: /styles.css comes later and gives these the text colour, for the saved files) */
+.page .ProseMirror sup.fnref a, .page .ProseMirror a.fnback { color: var(--accent); }
+.ProseMirror sup.fnref.ProseMirror-selectednode { background: var(--accent-soft); }
+.ProseMirror div.footnotes { position: relative; }
+.ProseMirror div.footnotes::after {
+	content: "new page";
+	position: absolute;
+	top: -0.7em;
+	right: 0;
+	padding-left: 6px;
+	background: var(--paper);
+	color: var(--muted);
+	font: 9px/1.4 system-ui, sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.ProseMirror .footnote-text { position: relative; }
+/* an empty note (ProseMirror keeps a lone <br> in it) shows a prompt laid over the line */
+.ProseMirror .footnote-text:has(> br:only-child)::before {
+	content: "Type the note. Enter goes back to the text.";
+	position: absolute;
+	left: 0.3em; /* the space after the number takes no room while the note is empty */
+	white-space: nowrap;
+	color: #aaa;
+	pointer-events: none;
+}
+@keyframes footnote-flash { from { background: var(--flag-soft); } to { background: transparent; } }
+.ProseMirror .flash { animation: footnote-flash 1.4s ease-out; }
+
 /* ---- status bar ---- */
 
 .status {

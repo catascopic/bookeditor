@@ -45,6 +45,12 @@
 		"code": {
 			"font": "IBM Plex Mono", "size": 10, "bold": true, "indent_in": 0.5,
 			"space_before": 10, "space_after": 10, "keep_with_next": true
+		},
+		"footnotes": {
+			"_comment": "Notes are gathered on a page of their own at the end of the chapter, under the heading. In marker (the superscript in the text) and label (what starts each note), {n} is the footnote's number.",
+			"heading": "Footnotes", "heading_bold": true,
+			"font": "Source Serif 4", "size": 10, "space_after": 10,
+			"marker": "[{n}]", "label": "[{n}]", "label_bold": true
 		}
 	}
 }

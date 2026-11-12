@@ -11,8 +11,15 @@ block per line, using only these shapes:
 	<figure><img src="images/x.png"><figcaption>…</figcaption></figure>   picture with caption
 	<div class="journal"><p>…</p>…</div>
 	<div class="email"><div class="email-from">…</div><div class="email-to">…</div><p>…</p>…</div>
+	<div class="footnotes"><div class="footnote" id="fn-ID"><a class="fnback" href="#fnref-ID">1</a><span class="footnote-text">…</span></div>…</div>
 
-Inline: <strong>, <em>, <code> (inline code) and <br>.
+Inline: <strong>, <em>, <code> (inline code), <br>, and footnote markers:
+	<sup class="fnref"><a id="fnref-ID" href="#fn-ID">1</a></sup>
+
+A footnote is a marker in the text and a note in the footnotes block, which comes last;
+the two share an ID (any short string). The numbers written into the file are only for
+reading it in a browser: the editor renumbers on every change, and the RTF export numbers
+the markers in the order they appear. In blocks, a marker is the run (ID, {'fnref'}).
 
 The <head> links to book.css, which the editor writes into the documents folder, so a
 chapter opened straight from disk in a browser looks the way it does in the editor.
@@ -85,28 +92,57 @@ def text_color_on(color: str) -> str:
 
 # ---------------------------------------------------------------- HTML -> blocks
 
+DIV_KINDS = ('email-from', 'email-to', 'email', 'journal', 'footnotes', 'footnote')
+
+
+def _id_after(prefix, value):
+	"""The footnote ID in an id attribute like "fn-abc" (prefix "fn-"), or None."""
+	if value and value.startswith(prefix):
+		return value[len(prefix):] or None
+	return None
+
+
 class _DocParser(HTMLParser):
 	def __init__(self):
 		super().__init__(convert_charrefs=True)
 		self.blocks = []
-		self.container = None  # the email/journal block being filled, if any
+		self.container = None  # the email/journal/footnotes block being filled, if any
 		self.figure = None  # the picture block being filled, if any
 		self.runs = None  # runs of the text block being read, if any
 		self.kind = None
 		self.marks = []
+		self.divs = []  # the kind of each open <div>, so each </div> closes the right thing
+		self.note_id = None  # the footnote being read
+		self.in_marker = False  # inside a footnote marker, whose number is not text
 
 	def handle_starttag(self, tag, attrs):
-		classes = (dict(attrs).get('class') or '').split()
+		attrs = dict(attrs)
+		classes = (attrs.get('class') or '').split()
 		if tag in TEXT_TAGS:
 			self._open(TEXT_TAGS[tag])
-		elif tag == 'div' and 'email-from' in classes:
-			self._open('from')
-		elif tag == 'div' and 'email-to' in classes:
-			self._open('to')
-		elif tag == 'div' and 'email' in classes:
-			self.container = {'type': 'email', 'from': [], 'to': [], 'paras': []}
-		elif tag == 'div' and 'journal' in classes:
-			self.container = {'type': 'journal', 'paras': []}
+		elif tag == 'div':
+			kind = next((k for k in DIV_KINDS if k in classes), None)
+			self.divs.append(kind)
+			if kind == 'email-from':
+				self._open('from')
+			elif kind == 'email-to':
+				self._open('to')
+			elif kind == 'email':
+				self.container = {'type': 'email', 'from': [], 'to': [], 'paras': []}
+			elif kind == 'journal':
+				self.container = {'type': 'journal', 'paras': []}
+			elif kind == 'footnotes':
+				self.container = {'type': 'footnotes', 'notes': []}
+			elif kind == 'footnote':
+				self.note_id = _id_after('fn-', attrs.get('id'))
+		elif tag == 'span' and 'footnote-text' in classes:
+			self._open('note')
+		elif tag == 'sup' and 'fnref' in classes:
+			self.in_marker = True
+		elif tag == 'a' and self.in_marker:
+			marker = _id_after('fnref-', attrs.get('id'))
+			if marker and self.runs is not None:
+				self.runs.append((marker, frozenset({'fnref'})))
 		elif tag == 'figure':
 			self.figure = {'type': 'figure', 'src': None, 'runs': []}
 		elif tag == 'img' and self.figure is not None:
@@ -121,20 +157,26 @@ class _DocParser(HTMLParser):
 			self.marks.append(MARK_TAGS[tag])
 
 	def handle_endtag(self, tag):
-		if tag in TEXT_TAGS or tag == 'figcaption' or (tag == 'div' and self.runs is not None):
+		if tag in TEXT_TAGS or tag == 'figcaption' or (tag == 'span' and self.kind == 'note'):
 			self._close()
+		elif tag == 'div':
+			kind = self.divs.pop() if self.divs else None
+			if kind in ('email-from', 'email-to'):
+				self._close()
+			elif kind in ('email', 'journal', 'footnotes') and self.container is not None:
+				self.blocks.append(self.container)
+				self.container = None
+		elif tag == 'sup' and self.in_marker:
+			self.in_marker = False
 		elif tag == 'figure' and self.figure is not None:
 			self.blocks.append(self.figure)
 			self.figure = None
-		elif tag == 'div' and self.container is not None:
-			self.blocks.append(self.container)
-			self.container = None
 		elif tag in MARK_TAGS and self.kind != 'code' and MARK_TAGS[tag] in self.marks:
 			self.marks.remove(MARK_TAGS[tag])
 
 	def handle_data(self, data):
-		if self.runs is None:
-			return  # whitespace between blocks
+		if self.runs is None or self.in_marker:
+			return  # whitespace between blocks, or a marker's number
 		marks = frozenset(self.marks)
 		if self.runs and self.runs[-1][1] == marks:
 			self.runs[-1] = (self.runs[-1][0] + data, marks)
@@ -155,6 +197,9 @@ class _DocParser(HTMLParser):
 		elif kind in ('from', 'to'):
 			if self.container and self.container['type'] == 'email':
 				self.container[kind] = runs
+		elif kind == 'note':
+			if self.container and self.container['type'] == 'footnotes' and self.note_id:
+				self.container['notes'].append({'id': self.note_id, 'runs': runs})
 		elif kind == 'para' and self.container is not None:
 			self.container['paras'].append(runs)
 		else:
@@ -168,7 +213,7 @@ def parse_html(html: str) -> list[dict]:
 	return parser.blocks
 
 
-_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|<div\b[^>]*\bclass="(?:email|journal)"[^>]*>)(?!\n)')
+_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|<div\b[^>]*\bclass="(?:email|journal|footnotes)"[^>]*>)(?!\n)')
 
 
 def tidy_html(html: str) -> str:
@@ -178,9 +223,37 @@ def tidy_html(html: str) -> str:
 
 # ---------------------------------------------------------------- blocks -> HTML
 
-def _runs_html(runs) -> str:
+def _marker_html(marker, number) -> str:
+	marker = htmllib.escape(marker, quote=True)
+	return f'<sup class="fnref"><a id="fnref-{marker}" href="#fn-{marker}">{number}</a></sup>'
+
+
+def footnote_numbers(blocks) -> dict:
+	"""Footnote ID -> number, counting markers in the order they appear."""
+	numbers = {}
+	for block in blocks:
+		for runs in _block_runs(block):
+			for text, marks in runs:
+				if 'fnref' in marks:
+					numbers.setdefault(text, len(numbers) + 1)
+	return numbers
+
+
+def _block_runs(block):
+	"""Every list of runs in a block that can hold footnote markers."""
+	if block['type'] in ('email', 'journal'):
+		return block['paras']
+	if block['type'] in ('chapter', 'section', 'body', 'figure'):
+		return [block['runs']]
+	return []
+
+
+def _runs_html(runs, numbers=None) -> str:
 	out = []
 	for text, marks in runs:
+		if 'fnref' in marks:
+			out.append(_marker_html(text, (numbers or {}).get(text, '?')))
+			continue
 		piece = htmllib.escape(text, quote=False).replace('\n', '<br>')
 		for mark, tag in (('code', 'code'), ('i', 'em'), ('b', 'strong')):  # bold outermost, as the editor writes it
 			if mark in marks:
@@ -192,6 +265,8 @@ def _runs_html(runs) -> str:
 def blocks_to_html(blocks: list[dict]) -> str:
 	"""The reverse of parse_html: blocks as the editor would save them, one per line."""
 	lines = []
+	numbers = footnote_numbers(blocks)
+	runs_html = lambda runs: _runs_html(runs, numbers)
 	for block in blocks:
 		kind = block['type']
 		if kind == 'dinkus':
@@ -201,18 +276,26 @@ def blocks_to_html(blocks: list[dict]) -> str:
 			lines.append(f'<pre><code>{htmllib.escape(text, quote=False)}</code></pre>')
 		elif kind == 'figure':
 			src = htmllib.escape(block['src'] or '', quote=True)
-			lines.append(f'<figure><img src="{src}"><figcaption>{_runs_html(block["runs"])}</figcaption></figure>')
+			lines.append(f'<figure><img src="{src}"><figcaption>{runs_html(block["runs"])}</figcaption></figure>')
+		elif kind == 'footnotes':
+			lines.append('<div class="footnotes">')
+			for note in block['notes']:
+				ref = htmllib.escape(note['id'], quote=True)
+				lines.append(
+					f'<div class="footnote" id="fn-{ref}"><a class="fnback" href="#fnref-{ref}">{numbers.get(note["id"], "?")}</a>'
+					f'<span class="footnote-text">{runs_html(note["runs"])}</span></div>')
+			lines.append('</div>')
 		elif kind in ('email', 'journal'):
 			lines.append(f'<div class="{kind}">')
 			if kind == 'email':
-				lines.append(f'<div class="email-from">{_runs_html(block["from"])}</div>')
-				lines.append(f'<div class="email-to">{_runs_html(block["to"])}</div>')
-			lines += [f'<p>{_runs_html(runs)}</p>' for runs in block['paras']]
+				lines.append(f'<div class="email-from">{runs_html(block["from"])}</div>')
+				lines.append(f'<div class="email-to">{runs_html(block["to"])}</div>')
+			lines += [f'<p>{runs_html(runs)}</p>' for runs in block['paras']]
 			lines.append('</div>')
 		else:
 			tag = {'chapter': 'h1', 'section': 'h2', 'body': 'p'}[kind]
 			note = f' data-note="{htmllib.escape(block["note"], quote=True)}"' if block.get('note') else ''
-			lines.append(f'<{tag}{note}>{_runs_html(block["runs"])}</{tag}>')
+			lines.append(f'<{tag}{note}>{runs_html(block["runs"])}</{tag}>')
 	return '\n'.join(lines) + '\n'
 
 
@@ -273,7 +356,7 @@ def wrap_document(blocks_html: str, fallback_title: str) -> str:
 	"""A complete HTML file around the editor's blocks. Titled after the chapter header, if any."""
 	body = tidy_html(blocks_html)
 	title = next(
-		(' '.join(''.join(text for text, _ in block['runs']).split())
+		(' '.join(''.join(text for text, marks in block['runs'] if 'fnref' not in marks).split())
 			for block in parse_html(body) if block['type'] == 'chapter'), '') or fallback_title
 	return (
 		'<!DOCTYPE html>\n'
@@ -338,6 +421,11 @@ def image_info(data: bytes):
 	return None
 
 
+def footnote_text(template: str, number) -> str:
+	"""A footnote's marker or label from its template in styles.json ("[{n}]" -> "[3]")."""
+	return template.replace('{n}', str(number))
+
+
 class _RtfBuilder:
 	def __init__(self, styles, base_dir=None):
 		self.base_dir = Path(base_dir) if base_dir else None
@@ -348,6 +436,7 @@ class _RtfBuilder:
 		self.senders = {sender_key(s['name']): s['color'] for s in load_senders(base_dir)} if base_dir else {}
 		self.out = []
 		self.space_above = 0  # the space after the paragraph written last, in points
+		self.footnotes = {}  # footnote ID -> number, filled in as the markers are written
 
 	def color(self, color):
 		"""Index of a #rrggbb colour in the RTF colour table (which counts from 1; 0 is 'automatic')."""
@@ -363,6 +452,9 @@ class _RtfBuilder:
 	def runs(self, runs, style):
 		parts = []
 		for text, marks in runs:
+			if 'fnref' in marks:
+				parts.append(self.marker(text))
+				continue
 			codes = ''
 			inline_code = self.styles['inline_code']
 			if 'b' in marks or ('code' in marks and inline_code.get('bold')):
@@ -374,6 +466,32 @@ class _RtfBuilder:
 				codes += f"\\f{self.font(inline_code['font'])}"
 			parts.append(f'{{{codes} {_escape(text)}}}' if codes else _escape(text))
 		return ''.join(parts)
+
+	def marker(self, marker):
+		"""A footnote marker, in superscript.
+
+		Plain text rather than a link to the note: the RTF parser behind the importer reads
+		link text without its formatting, so a linked marker would not come back as one.
+		"""
+		number = self.footnotes.setdefault(marker, len(self.footnotes) + 1)
+		return f"{{\\super {_escape(footnote_text(self.blocks['footnotes']['marker'], number))}}}"
+
+	def notes(self, block):
+		"""The footnotes, on a page of their own under a heading, in the order of their markers."""
+		style = self.blocks['footnotes']
+		notes = sorted(
+			((self.footnotes[note['id']], note) for note in block['notes'] if note['id'] in self.footnotes),
+			key=lambda pair: pair[0])
+		if not notes:
+			return
+		self.para(
+			style, _escape(style['heading']), before=style.get('space_before'), after=style.get('space_after'),
+			bold=style.get('heading_bold'), para_codes='\\pagebb')
+		for number, note in notes:
+			label = _escape(footnote_text(style['label'], number))
+			if style.get('label_bold'):
+				label = f'{{\\b {label}}}'
+			self.para(style, label + ' ' + self.runs(note['runs'], style), after=style.get('space_after'))
 
 	def para(self, style, content, before=0, after=0, font=None, bold=None, para_codes='', char_codes=''):
 		bold = style.get('bold') if bold is None else bold
@@ -472,6 +590,8 @@ class _RtfBuilder:
 		kind = block['type']
 		if kind == 'figure':
 			return self.figure(block)
+		if kind == 'footnotes':
+			return self.notes(block)
 		style = self.blocks[kind]
 		before, after = style.get('space_before'), style.get('space_after')
 		if kind == 'dinkus':
@@ -591,6 +711,25 @@ def to_css(styles=None, root='.ProseMirror', chrome=True) -> str:
 		f"padding: 0 {f.get('indent_in', 0)}in; text-indent: 0; }}")
 	rules.append(f"{root} figure img {{ max-width: min(100%, {f.get('max_width_in', 100)}in); }}")
 	rules.append(f"{root} figcaption {{ padding-top: {f.get('caption_gap', 0)}pt; }}")
+	# Footnotes. The files hold only the numbers; any brackets around them come from the
+	# templates in styles.json. The notes start a new page: on screen a dashed rule stands in.
+	n = b['footnotes']
+	marker_before, _, marker_after = n['marker'].partition('{n}')
+	label_before, _, label_after = n['label'].partition('{n}')
+	rules.append(f"{root} sup.fnref {{ line-height: 0; text-indent: 0; }}")
+	rules.append(f"{root} sup.fnref a, {root} a.fnback {{ color: inherit; text-decoration: none; }}")
+	rules.append(f"{root} sup.fnref a::before {{ content: {_css_string(marker_before)}; }}")
+	rules.append(f"{root} sup.fnref a::after {{ content: {_css_string(marker_after)}; }}")
+	rules.append(
+		f"{root} div.footnotes {{ {_css_text(n)}text-indent: 0; "
+		f"margin: 24pt 0 0; padding-top: 18pt; border-top: 1px dashed #b9b5ab; }}")
+	rules.append(
+		f"{root} div.footnotes::before {{ content: {_css_string(n['heading'])}; display: block; "
+		f"font-weight: {'bold' if n.get('heading_bold') else 'normal'}; margin-bottom: {n.get('space_after', 0)}pt; }}")
+	rules.append(f"{root} div.footnote {{ margin-bottom: {n.get('space_after', 0)}pt; }}")
+	rules.append(f"{root} a.fnback {{ font-weight: {'bold' if n.get('label_bold') else 'inherit'}; }}")
+	rules.append(f"{root} a.fnback::before {{ content: {_css_string(label_before)}; }}")
+	rules.append(f"{root} a.fnback::after {{ content: {_css_string(label_after + ' ')}; }}")
 	if not chrome:
 		return '\n'.join(rules) + '\n'
 	# toolbar buttons are drawn in the font of the thing they produce
@@ -621,6 +760,7 @@ body :not(pre) > code { font-size: inherit; }
 body figure img { display: block; margin: 0 auto; height: auto; }
 body figcaption:empty { display: none; }
 body div.journal > p { text-indent: 0; }
+body .footnote-text { white-space: pre-wrap; }
 @media print {
 	html { background: none; }
 	body { width: auto; margin: 0; padding: 0; box-shadow: none; }
@@ -637,7 +777,9 @@ def book_css(senders=(), styles=None) -> str:
 		for s in senders]
 	return (
 		_BOOK_CSS_BASE % {'width': styles['editor']['column_width_in']}
-		+ to_css(styles, root='body', chrome=False) + '\n'.join(rules) + ('\n' if rules else ''))
+		+ to_css(styles, root='body', chrome=False) + '\n'.join(rules) + ('\n' if rules else '')
+		# last, so it wins over the screen rules for the footnotes above
+		+ '@media print { body div.footnotes { margin-top: 0; padding-top: 0; border-top: 0; break-before: page; } }\n')
 
 
 if __name__ == '__main__':

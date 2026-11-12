@@ -1,13 +1,13 @@
 import { Editor, Extension, Node } from '@tiptap/core'
 import { StarterKit } from '@tiptap/starter-kit'
-import { Plugin, Selection, TextSelection } from '@tiptap/pm/state'
+import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // ---------------------------------------------------------------- custom block types
 //
 // Built-in TipTap pieces cover: paragraph (body), heading 1/2 (chapter/section),
 // horizontal rule (dinkus), code block, bold, italic, inline code.
-// Journal entries and quoted emails are defined here.
+// Journal entries, quoted emails, pictures and footnotes are defined here.
 
 const Journal = Node.create({
 	name: 'journal',
@@ -96,6 +96,197 @@ const Email = Node.create({
 		}
 	},
 })
+
+// ---------------------------------------------------------------- footnotes
+//
+// A footnote is a marker in the text (footnoteRef) and a note in the Footnotes section
+// (footnotes, one footnote per marker), which always comes last. The two share an id that
+// is never shown. Nobody types numbers: after every change, tidyFootnotes numbers the
+// markers in reading order, puts the notes in the same order, adds an empty note for a new
+// marker and drops the note of a marker that has gone. A dropped note's text is kept for
+// the rest of the session, so cutting a marker and pasting it elsewhere brings its note
+// along. Clicking a marker goes to its note; clicking a note's number goes back.
+
+const newFootnoteId = () => Math.random().toString(36).slice(2, 10)
+const idAfter = (prefix, value) => (value?.startsWith(prefix) && value.slice(prefix.length)) || null
+// The id and number are written into the HTML by renderHTML itself, not as attributes of their own.
+const footnoteAttributes = idOf => ({
+	id: { default: null, parseHTML: idOf, renderHTML: () => ({}) },
+	number: { default: null, parseHTML: () => null, renderHTML: () => ({}) },
+})
+
+const FootnoteRef = Node.create({
+	name: 'footnoteRef',
+	group: 'inline',
+	inline: true,
+	atom: true,
+	addAttributes: () => footnoteAttributes(element => idAfter('fnref-', element.querySelector('a')?.id)),
+	parseHTML: () => [{ tag: 'sup.fnref' }],
+	renderHTML: ({ node }) => ['sup', { class: 'fnref' },
+		['a', { id: `fnref-${node.attrs.id}`, href: `#fn-${node.attrs.id}` }, String(node.attrs.number ?? '?')]],
+	renderText: () => '', // the numbers aren't words
+})
+
+const Footnote = Node.create({
+	name: 'footnote',
+	content: 'text*',
+	defining: true,
+	isolating: true,
+	addAttributes: () => footnoteAttributes(element => idAfter('fn-', element.id)),
+	parseHTML: () => [{ tag: 'div.footnote', contentElement: 'span.footnote-text' }],
+	renderHTML: ({ node }) => ['div', { class: 'footnote', id: `fn-${node.attrs.id}` },
+		['a', { class: 'fnback', href: `#fnref-${node.attrs.id}` }, String(node.attrs.number ?? '?')],
+		['span', { class: 'footnote-text' }, 0]],
+	// In the editor the number sits outside the editable text.
+	addNodeView() {
+		return ({ node }) => {
+			const dom = Object.assign(document.createElement('div'), { className: 'footnote' })
+			const back = Object.assign(document.createElement('a'), {
+				className: 'fnback', contentEditable: 'false', title: 'Back to this footnote in the text' })
+			const text = Object.assign(document.createElement('span'), { className: 'footnote-text' })
+			dom.append(back, text)
+			const show = note => {
+				dom.dataset.id = note.attrs.id
+				back.textContent = note.attrs.number ?? '?'
+			}
+			show(node)
+			return {
+				dom, contentDOM: text,
+				update: note => note.type.name === 'footnote' && (show(note), true),
+				// the highlight after a jump changes the frame's class: that is not an edit to redraw for
+				ignoreMutation: m => back.contains(m.target) || (m.type === 'attributes' && m.target === dom),
+			}
+		}
+	},
+	addKeyboardShortcuts() {
+		const note = () => {
+			const { $from } = this.editor.state.selection
+			return $from.parent.type.name === 'footnote' ? $from : null
+		}
+		return {
+			// Enter goes back to the footnote in the text, to carry on writing from there.
+			Enter: () => !!note() && goToFootnote('footnoteRef', note().parent.attrs.id),
+			// A note can't be split or joined to its neighbours. To remove one, remove its marker.
+			Backspace: () => !!note() && this.editor.state.selection.empty && note().parentOffset === 0,
+			Delete: () => !!note() && this.editor.state.selection.empty && note().parentOffset === note().parent.content.size,
+		}
+	},
+})
+
+const Footnotes = Node.create({
+	name: 'footnotes',
+	group: 'block',
+	content: 'footnote+',
+	isolating: true,
+	selectable: false,
+	parseHTML: () => [{ tag: 'div.footnotes' }],
+	renderHTML: () => ['div', { class: 'footnotes' }, 0],
+})
+
+const footnotesKey = new PluginKey('footnotes')
+
+const FootnoteKeeper = Extension.create({
+	name: 'footnoteKeeper',
+	addProseMirrorPlugins() {
+		const removed = new Map() // id -> text of a note whose marker went, in case the marker comes back
+		return [new Plugin({
+			key: footnotesKey,
+			appendTransaction: (transactions, oldState, state) => {
+				if (!transactions.some(tr => tr.docChanged || tr.getMeta(footnotesKey))) return null
+				const tr = tidyFootnotes(state, removed)
+				if (tr && transactions.some(t => t.getMeta('addToHistory') === false)) tr.setMeta('addToHistory', false)
+				return tr
+			},
+		})]
+	},
+})
+
+// The transaction that puts the footnotes right (see above), or null if they already are.
+function tidyFootnotes(state, removed) {
+	const { doc, tr } = state
+	const { footnoteRef, footnote, footnotes, paragraph } = state.schema.nodes
+	const markers = [], notes = new Map(), sections = []
+	doc.descendants((node, pos) => {
+		if (node.type === footnotes) {
+			sections.push({ node, pos })
+			node.forEach(note => { if (!notes.has(note.attrs.id)) notes.set(note.attrs.id, note.content) })
+			return false
+		}
+		if (node.type === footnoteRef) markers.push({ node, pos })
+	})
+	// Each marker in reading order, with its number and note. A marker whose id is already
+	// taken was copied and pasted: it becomes a footnote of its own, starting with a copy of the note.
+	const wanted = [], seen = new Set()
+	markers.forEach(({ node, pos }, index) => {
+		let { id } = node.attrs
+		const text = notes.get(id) ?? removed.get(id) ?? null
+		if (!id || seen.has(id)) id = newFootnoteId()
+		seen.add(id)
+		const number = index + 1
+		if (id !== node.attrs.id || number !== node.attrs.number) tr.setNodeMarkup(pos, null, { ...node.attrs, id, number })
+		wanted.push({ id, number, text })
+	})
+	for (const [id, text] of notes) if (!seen.has(id)) removed.set(id, text)
+	const last = sections.length === 1 && sections[0].pos + sections[0].node.nodeSize === doc.content.size && sections[0].node
+	const inOrder = last
+		? last.childCount === wanted.length
+			&& wanted.every(({ id, number }, i) => last.child(i).attrs.id === id && last.child(i).attrs.number === number)
+		: !sections.length && !wanted.length
+	if (!inOrder) {
+		if (!wanted.length && sections.length === doc.childCount) tr.insert(0, paragraph.create()) // never leave the document empty
+		for (const { node, pos } of [...sections].reverse()) {
+			const from = tr.mapping.map(pos)
+			tr.delete(from, from + node.nodeSize)
+		}
+		if (wanted.length) {
+			const notesInOrder = wanted.map(({ id, number, text }) => footnote.create({ id, number }, text))
+			tr.insert(tr.doc.content.size, footnotes.create(null, notesInOrder))
+		}
+	}
+	return tr.docChanged ? tr : null
+}
+
+function findFootnote(type, id) {
+	let found = null
+	editor.state.doc.descendants((node, pos) => {
+		if (found) return false
+		if (node.type.name === type && node.attrs.id === id) found = { node, pos }
+	})
+	return found
+}
+
+// Go to a note (type 'footnote', cursor at the end of its text) or a marker ('footnoteRef',
+// cursor just after it), bringing it to the middle of the window with a brief highlight.
+function goToFootnote(type, id) {
+	const target = id && findFootnote(type, id)
+	if (!target) return false
+	const pos = target.pos + 1 + (type === 'footnote' ? target.node.content.size : 0)
+	editor.chain().focus().setTextSelection(pos).run()
+	const dom = editor.view.nodeDOM(target.pos)
+	if (dom instanceof HTMLElement) {
+		dom.scrollIntoView({ block: 'center' })
+		dom.classList.remove('flash')
+		void dom.offsetWidth // so the highlight plays again
+		dom.classList.add('flash')
+	}
+	return true
+}
+
+const inFootnote = () => editor?.state.selection.$from.parent.type.name === 'footnote'
+
+// Footnotes go in body text, headers, emails, journals and captions, but not in code or a note.
+function canAddFootnote() {
+	const { $to } = editor.state.selection
+	return $to.parent.canReplaceWith($to.index(), $to.index(), editor.schema.nodes.footnoteRef)
+}
+
+// A new footnote just after the cursor (or after the selected text), then on to its note to type it.
+function addFootnote() {
+	if (!editor || !canAddFootnote()) return false
+	const id = newFootnoteId()
+	editor.chain().focus().insertContentAt(editor.state.selection.to, { type: 'footnoteRef', attrs: { id } }).run()
+	return goToFootnote('footnote', id)
+}
 
 // ---------------------------------------------------------------- email sender colours
 //
@@ -497,6 +688,8 @@ function clearNotes(from, to) {
 
 // Choosing a style for a paragraph (Body included) answers its note.
 function applyStyle(key) {
+	// A note is only ever a footnote: changing its style would pull it out of the footnotes.
+	if (inFootnote()) return say('A footnote has no other styles. To remove it, delete its number in the text.'), false
 	const { from, to } = editor.state.selection
 	clearNotes(from, to)
 	return BLOCKS[key].run(editor)
@@ -589,8 +782,13 @@ const StyleShortcuts = Extension.create({
 	addKeyboardShortcuts() {
 		return {
 			'Mod-Alt-0': () => (applyStyle('body'), true),
+			// TipTap has its own for these three; going through applyStyle keeps them out of footnotes
+			'Mod-Alt-1': () => (applyStyle('chapter'), true),
+			'Mod-Alt-2': () => (applyStyle('section'), true),
+			'Mod-Alt-c': () => (applyStyle('code'), true),
 			'Mod-Alt-e': () => (applyStyle('email'), true),
 			'Mod-Alt-j': () => (applyStyle('journal'), true),
+			'Mod-Alt-f': () => (addFootnote(), true),
 			// Ctrl+B and Ctrl+I inside inline code: the same as the buttons. Elsewhere TipTap's own handle them.
 			'Mod-b': () => editor.isActive('code') && applyMark('bold'),
 			'Mod-i': () => editor.isActive('code') && applyMark('italic'),
@@ -627,10 +825,39 @@ function createEditor(html) {
 			Notes,
 			SenderColors,
 			Figure,
+			FootnoteRef,
+			Footnote,
+			Footnotes,
+			FootnoteKeeper,
 		],
 		editorProps: {
+			// In a note, typing is only ever text: the shortcuts typed as text (--- for a dinkus, and
+			// the like) would build new blocks there. These props are asked before any plugin is.
+			handleTextInput: (view, from, to, text) => {
+				if (!inFootnote()) return false
+				view.dispatch(view.state.tr.insertText(text, from, to))
+				return true
+			},
+			handleDOMEvents: {
+				// a footnote's number in the text goes to its note, and the note's number comes back
+				click: (view, event) => {
+					const marker = event.target.closest?.('sup.fnref')
+					const back = event.target.closest?.('a.fnback')
+					if (!marker && !back) return false
+					event.preventDefault()
+					if (marker) goToFootnote('footnote', idAfter('fnref-', marker.querySelector('a')?.id))
+					else goToFootnote('footnoteRef', back.closest('div.footnote')?.dataset.id)
+					return true
+				},
+			},
 			// pictures pasted from the clipboard (a screenshot, say) or dropped from a folder
 			handlePaste: (view, event) => {
+				// a note is one line of text, so whatever is pasted into one arrives as plain text
+				if (inFootnote()) {
+					const text = event.clipboardData.getData('text/plain').replace(/\s*\n\s*/g, ' ')
+					if (text) view.dispatch(view.state.tr.insertText(text))
+					return true
+				}
 				const files = pictureFiles(event.clipboardData)
 				if (!files.length) return false
 				files.forEach(addPicture)
@@ -652,6 +879,8 @@ function createEditor(html) {
 			refreshProblems()
 		},
 	})
+	// number the footnotes of the document as loaded (not an edit: it can't be undone, and isn't unsaved)
+	editor.view.dispatch(editor.state.tr.setMeta(footnotesKey, true).setMeta('addToHistory', false))
 	setDirty(false)
 	refreshToolbar()
 	refreshProblems()
@@ -672,6 +901,7 @@ function refreshToolbar() {
 	}
 	// The style button names the style the cursor is in, drawn in that style's own font.
 	const look = currentItem ? getComputedStyle(currentItem) : null
+	if (inFootnote()) current = 'Footnote'
 	$('style-current').textContent = currentItem?.firstChild.textContent || current || 'No style'
 	Object.assign($('style-current').style, {
 		fontFamily: look?.fontFamily ?? '', fontWeight: look?.fontWeight ?? '', fontStyle: look?.fontStyle ?? '',
@@ -682,6 +912,7 @@ function refreshToolbar() {
 		// bold and italic can be applied inside inline code, where they take the code off first
 		button.disabled = !(mark !== 'code' && editor.isActive('code')) && !editor.can().toggleMark(mark)
 	}
+	$('footnote').disabled = !canAddFootnote()
 	$('status-block').textContent = current
 	const words = editor.getText().trim().split(/\s+/).filter(Boolean).length
 	$('status-words').textContent = `${words.toLocaleString()} words`
@@ -777,6 +1008,7 @@ for (const button of document.querySelectorAll('[data-block]')) {
 	button.addEventListener('click', () => {
 		closeStyleMenu()
 		if (button.closest('#style-menu')) applyStyle(button.dataset.block)
+		else if (inFootnote()) say('Pictures and dinkuses go in the text, not in a footnote.')
 		else BLOCKS[button.dataset.block].run(editor)
 	})
 }
@@ -808,6 +1040,9 @@ for (const button of document.querySelectorAll('[data-mark]')) {
 	button.addEventListener('mousedown', event => event.preventDefault())
 	button.addEventListener('click', () => applyMark(button.dataset.mark))
 }
+
+$('footnote').addEventListener('mousedown', event => event.preventDefault())
+$('footnote').addEventListener('click', addFootnote)
 
 $('picture-file').addEventListener('change', async event => {
 	for (const file of event.target.files) await addPicture(file)

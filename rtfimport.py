@@ -12,6 +12,10 @@ indents, and bold/italic where the style calls for them) and comes out one of th
 	unknown   it fits nothing; it is imported as body text carrying a note, which the
 	          editor shows in its problems list until you give it a style or dismiss it
 
+Footnotes: a superscript [keyword] in the text is a footnote marker, and its note is the
+paragraph starting [keyword] (capitals aside) under a "Footnotes" heading near the end.
+The keywords become numbers, 1, 2, 3... in the order the markers appear.
+
 Checking is importing without saving, so there is only one set of rules.
 
 The RTF itself is read by the separate `rtfparser` project.  It is looked for as an
@@ -22,7 +26,7 @@ import argparse
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import bookdoc
@@ -36,6 +40,8 @@ STYLE_NAMES = {
 	'code': 'Code block', 'email': 'Email',
 }
 DINKUS_CHARS = set('✻✽✱＊*⁂')
+FOOTNOTE_KEY = re.compile(r'\[\s*([^\[\]]+?)\s*\]')  # [keyword], as a superscript marker
+NOTE_LABEL = re.compile(r'^\s*\[\s*([^\[\]]+?)\s*\]\s*')  # [keyword] starting a note
 
 
 def load_parser():
@@ -67,6 +73,7 @@ class Run:
 	bold: bool
 	italic: bool
 	picture: object = None  # an rtfparser Picture, for a run that is an embedded picture
+	superscript: bool = False
 
 
 @dataclass
@@ -125,7 +132,7 @@ def read_paragraphs(path) -> list[Para]:
 			font = doc.fonts.get(prop.get('f', doc.deff))
 			self.runs.append(Run(
 				text, font.name if font else '', (prop.get('fs') or 24) / 2,
-				bool(prop.get('b')), bool(prop.get('i')), picture))
+				bool(prop.get('b')), bool(prop.get('i')), picture, bool(prop.get('super'))))
 
 		def write(self, text):
 			self.add(text)
@@ -152,6 +159,18 @@ def read_paragraphs(path) -> list[Para]:
 
 	rtf.Parser(Collector).parse(path)
 	return paragraphs
+
+
+def drop_chars(runs, count):
+	"""runs without their first count characters of text."""
+	out = []
+	for run in runs:
+		if count >= len(run.text) and run.picture is None:
+			count -= len(run.text)
+			continue
+		out.append(replace(run, text=run.text[count:]) if count else run)
+		count = 0
+	return out
 
 
 # ---------------------------------------------------------------- the report
@@ -204,6 +223,7 @@ class Importer:
 		self.styles = styles or bookdoc.load_styles()
 		self.kinds = self.styles['blocks']
 		self.code_font = self.styles['inline_code']['font']
+		self.notes_style = self.kinds['footnotes']
 		self.store_picture = store_picture
 		email = self.kinds['email']
 		label = lambda key: re.escape(email[key].strip()) or r'(?!)'  # an empty label never matches
@@ -216,8 +236,10 @@ class Importer:
 		self.paragraphs = paragraphs
 		self.report.paragraphs = sum(1 for p in paragraphs if not p.blank)
 		self.joinable = False  # may the next paragraph continue the block before it?
+		self.markers = []  # (ID, keyword, paragraph) for each footnote marker, in order
+		notes_at = self.find_notes(paragraphs)
 		i = 0
-		while i < len(paragraphs):
+		while i < notes_at:
 			para = paragraphs[i]
 			if para.blank:
 				self.blank(i)
@@ -231,6 +253,7 @@ class Importer:
 				i = self.email(i)
 			else:
 				i = self.text_block(i)
+		self.footnotes(notes_at)
 		return self.blocks, self.report
 
 	# -- matching a paragraph to a style
@@ -280,7 +303,10 @@ class Importer:
 	def inline(self, para, font, bold=False, italic=False, runs=None):
 		"""A paragraph's text as (text, marks) runs, relative to the style it is going into."""
 		out, strays = [], set()
-		for run in para.runs if runs is None else runs:
+		for run in self.find_markers(para, para.runs if runs is None else runs):
+			if isinstance(run, str):  # a footnote marker's ID
+				out.append((run, frozenset({'fnref'})))
+				continue
 			if not run.text:
 				continue
 			marks = set()
@@ -301,6 +327,99 @@ class Importer:
 		for stray in sorted(strays):
 			self.fixed(para, f'Some of the text was in {stray}; it is now in {font} like the rest.')
 		return out
+
+	# -- footnotes
+
+	def find_markers(self, para, runs):
+		"""runs, with each superscript [keyword] replaced by the ID of a new footnote marker."""
+		out, i = [], 0
+		while i < len(runs):
+			if not (runs[i].superscript and runs[i].text):
+				out.append(runs[i])
+				i += 1
+				continue
+			group = [runs[i]]  # superscript runs in a row, read as one piece of text: "[", "foot", "]"
+			i += 1
+			while i < len(runs) and runs[i].superscript and runs[i].picture is None:
+				group.append(runs[i])
+				i += 1
+			text, done = ''.join(run.text for run in group), 0
+			for match in FOOTNOTE_KEY.finditer(text):
+				if match.start() > done:
+					out.append(replace(group[0], text=text[done:match.start()], superscript=False))
+				marker = f'n{len(self.markers) + 1}'
+				self.markers.append((marker, match.group(1), para))
+				out.append(marker)
+				done = match.end()
+			if done < len(text):
+				rest = text[done:]
+				out.append(replace(group[0], text=rest, superscript=False))
+				if rest.strip():
+					self.fixed(para, f'The superscript "{rest.strip()}" is now ordinary text: only a superscript [keyword] becomes a footnote.')
+		return out
+
+	def find_notes(self, paragraphs):
+		"""Where the Footnotes heading is, or len(paragraphs) if there is none. A paragraph
+		reading "Footnotes" counts only if a [keyword] note comes after it."""
+		heading = self.notes_style['heading'].strip().casefold()
+		for i, para in enumerate(paragraphs):
+			if para.text.strip().rstrip(':').strip().casefold() == heading and any(
+					NOTE_LABEL.match(p.text) for p in paragraphs[i + 1:] if not p.blank):
+				return i
+		return len(paragraphs)
+
+	def footnotes(self, start):
+		"""The notes from paragraphs[start] (the heading) on, matched to the markers by keyword."""
+		notes, order, strays, font = {}, [], [], self.notes_style['font']
+		heading = self.paragraphs[start] if start < len(self.paragraphs) else None
+		if heading:
+			self.report.matched += 1
+		current = None
+		for para in self.paragraphs[start + 1:]:
+			if para.blank:
+				self.report.blank_lines += 1
+				continue
+			match = NOTE_LABEL.match(para.text)
+			if match:
+				key = match.group(1).casefold()
+				runs = self.inline(para, font, runs=drop_chars(para.runs, match.end()))
+				if key in notes:
+					self.fixed(para, f'A second note labelled [{match.group(1)}] was added to the end of the first.')
+					notes[key]['runs'] += [(' ', frozenset())] + runs
+				else:
+					notes[key] = {'label': match.group(1), 'runs': runs, 'para': para}
+					order.append(key)
+				current = notes[key]
+				self.report.matched += 1
+			elif current:
+				current['runs'] += [(' ', frozenset())] + self.inline(para, font)
+				self.fixed(para, f'This paragraph under Footnotes has no [keyword], so it was added to the end of note [{current["label"]}].')
+			else:
+				note = 'This is under Footnotes but does not start with a [keyword], so it belongs to no footnote.'
+				strays.append({'type': 'body', 'note': note, 'runs': self.inline(para, para.font, para.bold, para.italic)})
+				self.report.unknown.append(Issue(para.number, para.excerpt(), note))
+		block, used = {'type': 'footnotes', 'notes': []}, set()
+		for marker, label, para in self.markers:
+			key = label.casefold()
+			note = notes.get(key)
+			if note is None:
+				self.fixed(para, f'Footnote [{label}] has no note under Footnotes, so its note is empty.')
+			elif key in used:
+				self.fixed(para, f'Footnote [{label}] is used more than once; each use now has its own copy of the note.')
+			used.add(key)
+			block['notes'].append({'id': marker, 'runs': list(note['runs']) if note else []})
+		for key in order:
+			if key not in used:
+				note = notes[key]
+				message = (f'Footnote [{note["label"]}] is not used anywhere in the text. Add a footnote where it '
+					'belongs and move this text into it, or delete it.')
+				self.blocks.append({'type': 'body', 'note': message, 'runs': [(f'[{note["label"]}] ', frozenset())] + note['runs']})
+				self.report.unknown.append(Issue(note['para'].number, note['para'].excerpt(), message))
+		self.blocks += strays
+		if block['notes']:
+			self.blocks.append(block)
+			numbered = ', '.join(f'[{label}] is {n}' for n, (_, label, _) in enumerate(self.markers, 1))
+			self.fixed(heading or self.markers[0][2], f'Footnotes are numbered in the order they appear: {numbered}.')
 
 	# -- building blocks
 
