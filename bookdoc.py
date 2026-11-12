@@ -19,6 +19,10 @@ chapter opened straight from disk in a browser looks the way it does in the edit
 Everything in the <head>, and the data-from attribute on emails, is rewritten on every
 save: only the blocks in the <body> are the document.
 
+A body paragraph may carry data-note="…": a note from the RTF importer about a paragraph
+it could not match to a style. The editor lists these until they are dealt with; the RTF
+export ignores them.
+
 Can also be run directly:  python bookdoc.py chapter.html  ->  writes chapter.rtf
 """
 import colorsys
@@ -164,7 +168,7 @@ def parse_html(html: str) -> list[dict]:
 	return parser.blocks
 
 
-_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|<div class="(?:email|journal)">)(?!\n)')
+_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|<div\b[^>]*\bclass="(?:email|journal)"[^>]*>)(?!\n)')
 
 
 def tidy_html(html: str) -> str:
@@ -172,12 +176,81 @@ def tidy_html(html: str) -> str:
 	return _BLOCK_BREAK.sub(r'\1\n', html.strip()) if html.strip() else '<p></p>\n'
 
 
+# ---------------------------------------------------------------- blocks -> HTML
+
+def _runs_html(runs) -> str:
+	out = []
+	for text, marks in runs:
+		piece = htmllib.escape(text, quote=False).replace('\n', '<br>')
+		for mark, tag in (('code', 'code'), ('i', 'em'), ('b', 'strong')):  # bold outermost, as the editor writes it
+			if mark in marks:
+				piece = f'<{tag}>{piece}</{tag}>'
+		out.append(piece)
+	return ''.join(out)
+
+
+def blocks_to_html(blocks: list[dict]) -> str:
+	"""The reverse of parse_html: blocks as the editor would save them, one per line."""
+	lines = []
+	for block in blocks:
+		kind = block['type']
+		if kind == 'dinkus':
+			lines.append('<hr>')
+		elif kind == 'code':
+			text = ''.join(text for text, _ in block['runs'])
+			lines.append(f'<pre><code>{htmllib.escape(text, quote=False)}</code></pre>')
+		elif kind == 'figure':
+			src = htmllib.escape(block['src'] or '', quote=True)
+			lines.append(f'<figure><img src="{src}"><figcaption>{_runs_html(block["runs"])}</figcaption></figure>')
+		elif kind in ('email', 'journal'):
+			lines.append(f'<div class="{kind}">')
+			if kind == 'email':
+				lines.append(f'<div class="email-from">{_runs_html(block["from"])}</div>')
+				lines.append(f'<div class="email-to">{_runs_html(block["to"])}</div>')
+			lines += [f'<p>{_runs_html(runs)}</p>' for runs in block['paras']]
+			lines.append('</div>')
+		else:
+			tag = {'chapter': 'h1', 'section': 'h2', 'body': 'p'}[kind]
+			note = f' data-note="{htmllib.escape(block["note"], quote=True)}"' if block.get('note') else ''
+			lines.append(f'<{tag}{note}>{_runs_html(block["runs"])}</{tag}>')
+	return '\n'.join(lines) + '\n'
+
+
+# ---------------------------------------------------------------- pictures on disk
+
+IMAGE_EXTENSIONS = {'png': '.png', 'jpeg': '.jpg'}
+
+
+def store_image(folder, stem: str, data: bytes) -> str:
+	"""Save a PNG or JPEG into folder under a name based on stem; returns the file name.
+
+	A name already taken by a different picture gets a number added; the same picture
+	again reuses the file that is there.
+	"""
+	info = image_info(data)
+	if not info:
+		raise ValueError('only PNG and JPEG pictures can be used')
+	stem = re.sub(r'[^\w\- ()]+', '-', stem).strip('- ') or 'picture'
+	folder = Path(folder)
+	folder.mkdir(parents=True, exist_ok=True)
+	number = 1
+	while True:
+		path = folder / f"{stem}{'' if number == 1 else f'-{number}'}{IMAGE_EXTENSIONS[info[0]]}"
+		if not path.exists():
+			path.write_bytes(data)
+			return path.name
+		if path.read_bytes() == data:
+			return path.name
+		number += 1
+
+
 # ---------------------------------------------------------------- the file on disk
 
 DOC_FORMAT = 1
 BOOK_CSS = 'book.css'
 _BODY = re.compile(r'<body[^>]*>(.*)</body>', re.DOTALL | re.IGNORECASE)
-_EMAIL_FROM = re.compile(r'<div class="email">(\s*)<div class="email-from">(.*?)</div>', re.DOTALL)
+_EMAIL_FROM = re.compile(r'<div\b([^>]*\bclass="email"[^>]*)>(\s*)<div class="email-from">(.*?)</div>', re.DOTALL)
+_DATA_FROM = re.compile(r'\s*data-from="[^"]*"')
 _TAG = re.compile(r'<[^>]+>')
 
 
@@ -189,10 +262,11 @@ def body_of(document: str) -> str:
 
 def _tag_sender(match):
 	# lets book.css colour the email by sender; the editor works the colour out for itself
-	key = sender_key(htmllib.unescape(_TAG.sub('', match.group(2))))
+	attributes, gap, sender = match.groups()
+	key = sender_key(htmllib.unescape(_TAG.sub('', sender)))
 	return (
-		f'<div class="email" data-from="{htmllib.escape(key, quote=True)}">{match.group(1)}'
-		f'<div class="email-from">{match.group(2)}</div>')
+		f'<div{_DATA_FROM.sub("", attributes)} data-from="{htmllib.escape(key, quote=True)}">{gap}'
+		f'<div class="email-from">{sender}</div>')
 
 
 def wrap_document(blocks_html: str, fallback_title: str) -> str:

@@ -27,7 +27,6 @@ STATIC = HERE / 'static'
 VENDOR = HERE / 'vendor'
 HOST = '127.0.0.1'
 PORT = 8765
-IMAGE_EXTENSIONS = {'png': '.png', 'jpeg': '.jpg'}
 RESTART_DELAY = 1  # seconds between Ctrl+C and the restart
 WATCH_INTERVAL = 0.5  # seconds between checks for changed code
 WATCH_SKIP = {'vendor', 'documents', 'static', '__pycache__'}
@@ -145,22 +144,10 @@ def read_image(name):
 def save_image():
 	"""Store an uploaded picture in <documents>/images and say what to call it."""
 	data = request.get_data()
-	info = bookdoc.image_info(data)
-	if not info:
+	if not bookdoc.image_info(data):
 		abort(415, 'only PNG and JPEG pictures can be used')
-	stem = re.sub(r'[^\w\- ()]+', '-', Path(request.args.get('name') or 'picture').stem).strip('- ') or 'picture'
-	folder = docs_dir / 'images'
-	folder.mkdir(exist_ok=True)
-	number = 1
-	while True:
-		path = folder / f"{stem}{'' if number == 1 else f'-{number}'}{IMAGE_EXTENSIONS[info[0]]}"
-		if not path.exists():
-			path.write_bytes(data)
-			break
-		if path.read_bytes() == data:
-			break  # the same picture again: reuse it
-		number += 1
-	return jsonify(src=f'images/{path.name}')
+	name = bookdoc.store_image(docs_dir / 'images', Path(request.args.get('name') or 'picture').stem, data)
+	return jsonify(src=f'images/{name}')
 
 
 @app.post('/api/export/<name>')
