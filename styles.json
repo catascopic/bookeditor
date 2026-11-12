@@ -30,7 +30,8 @@
 			"_comment": "Emails are boxed. The box and the From/To band take the sender's colour (set in the editor under Senders); default_color is for senders with no colour set.",
 			"border_width": 1.5, "box_padding": 6, "default_color": "#5f6368",
 			"header_font": "IBM Plex Mono", "header_bold": true,
-			"from_label": "From: ", "to_label": "  To: "
+			"_comment_labels": "The band reads: from_label, sender, to_label, recipient, all on one line. Spaces count. For 'ALICE → BOB' use an empty from_label and ' → ' as to_label.",
+			"from_label": "From: ", "to_label": "   To: "
 		},
 		"journal": {
 			"font": "Courier New", "size": 10, "indent_in": 0.5,

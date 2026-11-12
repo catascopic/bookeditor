@@ -350,8 +350,10 @@ class _RtfBuilder:
 		band = dict(
 			font=style.get('header_font'), bold=style.get('header_bold'),
 			para_codes=f'{box}\\cbpat{ink}', char_codes=f'\\cf{paper}')
-		self.para(style, _escape(style['from_label']) + self.runs(block['from'], style), before=style.get('space_before'), **band)
-		self.para(style, _escape(style['to_label']) + self.runs(block['to'], style), **band)
+		header = (
+			_escape(style['from_label']) + self.runs(block['from'], style)
+			+ _escape(style['to_label']) + self.runs(block['to'], style))
+		self.para(style, header, before=style.get('space_before'), **band)
 		self.container(style, block['paras'], first_before=0, para_codes=box)
 
 	def picture(self, src, style):
@@ -494,9 +496,12 @@ def to_css(styles=None, root='.ProseMirror', chrome=True) -> str:
 	rules.append(f'{root} div.email > p:last-child {{ margin-bottom: 0; }}')
 	rules.append(
 		f"{root} .email-from, {root} .email-to {{ {_css_text(e, e.get('header_font'), e.get('header_bold'))}"
-		f"background: {sender}; color: {sender_text}; padding: 0 {pad}; }}")
-	rules.append(f'{root} .email-from {{ padding-top: 3pt; }}')
-	rules.append(f'{root} .email-to {{ padding-bottom: 3pt; }}')
+		f"background: {sender}; color: {sender_text}; padding: 3pt {pad}; }}")
+	# From and To sit side by side as one band: two columns, with the paragraphs below spanning both
+	rules.append(f'{root} div.email {{ display: grid; grid-template-columns: auto 1fr; }}')
+	rules.append(f'{root} div.email > p {{ grid-column: 1 / -1; }}')
+	rules.append(f'{root} .email-from {{ padding-right: 0; }}')
+	rules.append(f'{root} .email-to {{ padding-left: 0; }}')
 	rules.append(f"{root} .email-from::before {{ content: {_css_string(e['from_label'])}; }}")
 	rules.append(f"{root} .email-to::before {{ content: {_css_string(e['to_label'])}; }}")
 	f, body = b['figure'], b['body']
