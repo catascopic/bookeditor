@@ -116,50 +116,54 @@ const Dinkus = HorizontalRule.extend({
 
 // -- becomes an en dash and --- an em dash, as in Google Docs: once the next character is
 // typed, which is what lets --- get past --. Backspace straight afterwards puts the hyphens
-// back. (TipTap leaves code blocks and inline code alone, for this and the quotes below.)
+// back. (TipTap leaves code blocks and inline code alone.)
 const dashes = new InputRule({
 	find: /(?<!-)(-{2,3})([^-])$/,
 	handler: ({ state, range, match }) => {
-		const dash = match[1].length === 2 ? '\u2013' : '\u2014'
-		state.tr.insertText(dash + curl(match[2], dash), range.from, range.to) // --" is a dash and an opening quote
+		state.tr.insertText((match[1].length === 2 ? '\u2013' : '\u2014') + match[2], range.from, range.to)
 	},
 })
 
-// Smart quotes: a typed " or ' becomes a curly one. It opens at the start of a line or after
-// a space, bracket, dash or opening quote, and closes (or is an apostrophe) anywhere else.
-// Ctrl+Shift+" turns them on and off, remembered in this browser; Backspace straight after
-// one puts the straight quote back.
-let smartQuotes = recall('smartQuotes') !== 'off'
-const OPENS_AFTER = /^$|[\s([{\u201c\u2018\u2013\u2014]$/
-
-function curl(char, before) {
-	if (!smartQuotes || (char !== '"' && char !== "'")) return char
-	const opening = OPENS_AFTER.test(before)
-	return char === '"' ? (opening ? '\u201c' : '\u201d') : (opening ? '\u2018' : '\u2019')
-}
-
-const quotes = new InputRule({
-	find: /["']$/,
-	handler: ({ state, range, match }) => {
-		if (!smartQuotes) return null
-		const $from = state.doc.resolve(range.from)
-		// the character before; a line break counts as a space, a footnote marker as a letter
-		const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, null,
-			leaf => leaf.type.name === 'hardBreak' ? '\n' : 'x')
-		state.tr.insertText(curl(match[0], before), range.from, range.to)
-	},
-})
-
-// Both rules in one extension, dashes first: the first rule that matches a keystroke wins,
-// and the " in --" belongs to the dash rule.
 const Typing = Extension.create({
 	name: 'typing',
-	addInputRules: () => [dashes, quotes],
+	addInputRules: () => [dashes],
 	addKeyboardShortcuts: () => ({
 		'Mod-Shift-"': toggleSmartQuotes,
 		"Mod-Shift-'": toggleSmartQuotes, // the same keys, as some keyboards report them
 	}),
 })
+
+// Smart quotes: a typed " or ' becomes a curly one. It opens at the start of a line or after
+// a space, bracket, dash or opening quote, and closes (or is an apostrophe) anywhere else.
+// Ctrl+Shift+" turns them on and off, remembered in this browser. Not in code.
+//
+// This is not one of TipTap's input rules, as the dashes are: those can be taken back with
+// Backspace, and a curly quote should delete like any other character. It is run from the
+// editor's handleTextInput, which is asked before TipTap's input rules are.
+let smartQuotes = recall('smartQuotes') !== 'off'
+const OPENS_AFTER = /^$|[\s([{\u201c\u2018\u2013\u2014]$/
+const DASH_BEFORE = /(?<!-)-{2,3}$/ // a quote straight after -- or --- also makes the dash
+
+function typeQuote(view, from, to, text) {
+	if (!smartQuotes || (text !== '"' && text !== "'")) return false
+	const { state } = view
+	const $from = state.doc.resolve(from)
+	const isCode = mark => mark.type.spec.code
+	if ($from.parent.type.spec.code || (state.storedMarks || $from.marks()).some(isCode)) return false
+	// the few characters before; a line break counts as a space, a footnote marker as a letter
+	let before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 4), $from.parentOffset, null,
+		leaf => leaf.type.name === 'hardBreak' ? '\n' : 'x')
+	let insert = ''
+	const hyphens = from === to && before.match(DASH_BEFORE)?.[0]
+	if (hyphens) {
+		insert = before = hyphens.length === 2 ? '\u2013' : '\u2014'
+		from -= hyphens.length
+	}
+	const opening = OPENS_AFTER.test(before.slice(-1))
+	insert += text === '"' ? (opening ? '\u201c' : '\u201d') : (opening ? '\u2018' : '\u2019')
+	view.dispatch(state.tr.insertText(insert, from, to))
+	return true
+}
 
 function toggleSmartQuotes() {
 	smartQuotes = !smartQuotes
@@ -911,6 +915,7 @@ function createEditor(html) {
 			FootnoteKeeper,
 		],
 		editorProps: {
+			handleTextInput: typeQuote,
 			handleDOMEvents: {
 				// a footnote's number in the text goes to its note, and the note's number comes back
 				click: (view, event) => {
