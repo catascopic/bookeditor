@@ -91,10 +91,32 @@ main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
 .ProseMirror .email-from, .ProseMirror .email-to { text-indent: 0; }
 
 .ProseMirror figure { margin: 0; }
-.ProseMirror figure img { display: block; margin: 0 auto; height: auto; user-select: none; }
-.ProseMirror figure.ProseMirror-selectednode img { outline: 2px solid var(--accent); }
-/* an empty caption shows a prompt (ProseMirror keeps a lone <br> in an empty text block) */
-.ProseMirror figcaption:has(> br:only-child)::before { content: "Caption"; color: #aaa; }
+.ProseMirror .figure-frame { position: relative; display: inline-block; max-width: 100%; vertical-align: top; }
+.ProseMirror figure img { display: block; margin: 0 auto; height: auto; cursor: pointer; user-select: none; }
+.ProseMirror figure.active img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ProseMirror .figure-remove {
+	display: none;
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	height: 24px;
+	padding: 0 8px;
+	font: 12px/1 system-ui, "Segoe UI", sans-serif;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+}
+.ProseMirror figure.active .figure-remove { display: block; }
+/* Captions are optional. An empty one (ProseMirror keeps a lone <br> in it) takes no room
+   until the cursor is in it, and then shows a prompt laid over the line rather than in it. */
+.ProseMirror figcaption { position: relative; cursor: text; }
+.ProseMirror figure:not(.active) figcaption:has(> br:only-child) { height: 0; padding: 0; overflow: hidden; }
+.ProseMirror figure.active figcaption:has(> br:only-child)::before {
+	content: "Caption (optional)";
+	position: absolute;
+	left: 0;
+	right: 0;
+	color: #aaa;
+	pointer-events: none;
+}
 
 /* a faint labelled rule down the side of journals and code blocks (emails have their own box) */
 .ProseMirror div.journal, .ProseMirror pre { position: relative; }

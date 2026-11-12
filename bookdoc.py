@@ -533,6 +533,7 @@ body hr { border: 0; height: auto; }
 body pre code { font: inherit; }
 body :not(pre) > code { font-size: inherit; }
 body figure img { display: block; margin: 0 auto; height: auto; }
+body figcaption:empty { display: none; }
 body div.journal > p { text-indent: 0; }
 @media print {
 	html { background: none; }

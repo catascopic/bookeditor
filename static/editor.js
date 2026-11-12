@@ -1,6 +1,6 @@
 import { Editor, Extension, Node } from '@tiptap/core'
 import { StarterKit } from '@tiptap/starter-kit'
-import { Plugin, TextSelection } from '@tiptap/pm/state'
+import { Plugin, Selection, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // ---------------------------------------------------------------- custom block types
@@ -192,7 +192,6 @@ const Figure = Node.create({
 	content: 'inline*',
 	defining: true,
 	isolating: true,
-	draggable: true,
 	addAttributes() {
 		return { src: { default: null } }
 	},
@@ -202,21 +201,87 @@ const Figure = Node.create({
 		getAttrs: element => ({ src: element.querySelector('img')?.getAttribute('src') }),
 	}],
 	renderHTML: ({ node }) => ['figure', ['img', { src: node.attrs.src }], ['figcaption', 0]],
+	// The caption is optional. While it is empty and the cursor is elsewhere it takes up no
+	// room; clicking the picture puts the cursor in it, which opens it up for typing.
 	addNodeView() {
-		return ({ node }) => {
+		return ({ node, editor, getPos }) => {
 			const dom = document.createElement('figure')
+			const frame = document.createElement('div')
+			frame.className = 'figure-frame'
+			frame.contentEditable = 'false'
 			const image = document.createElement('img')
 			image.src = node.attrs.src
-			image.contentEditable = 'false'
 			image.draggable = false
+			image.title = 'Click to add or edit the caption'
+			const remove = Object.assign(document.createElement('button'), {
+				type: 'button', className: 'figure-remove', textContent: 'Remove picture',
+			})
+			frame.append(image, remove)
 			const caption = document.createElement('figcaption')
-			dom.append(image, caption)
-			return { dom, contentDOM: caption }
+			dom.append(frame, caption)
+
+			const current = () => editor.state.doc.nodeAt(getPos())
+			const toCaption = event => {
+				event.preventDefault()
+				editor.chain().focus().setTextSelection(getPos() + 1 + current().content.size).run()
+			}
+			image.addEventListener('mousedown', toCaption)
+			// A click on an empty caption's prompt would otherwise land beside it, not in it.
+			caption.addEventListener('mousedown', event => {
+				if (current().content.size === 0) toCaption(event)
+			})
+			remove.addEventListener('mousedown', event => event.preventDefault())
+			remove.addEventListener('click', () => {
+				const pos = getPos()
+				editor.chain().focus().deleteRange({ from: pos, to: pos + current().nodeSize }).run()
+			})
+			return {
+				dom,
+				contentDOM: caption,
+				stopEvent: event => frame.contains(event.target), // the picture and its button are ours
+				ignoreMutation: mutation => !caption.contains(mutation.target),
+			}
 		}
+	},
+	// Marks the picture the cursor is in, so its caption line and Remove button can show.
+	addProseMirrorPlugins() {
+		return [new Plugin({
+			props: {
+				decorations(state) {
+					const { $from } = state.selection
+					if ($from.parent.type.name !== 'figure') return null
+					const pos = $from.before()
+					return DecorationSet.create(state.doc, [
+						Decoration.node(pos, pos + $from.parent.nodeSize, { class: 'active' }),
+					])
+				},
+			},
+		})]
 	},
 	addKeyboardShortcuts() {
 		const inCaption = () => this.editor.state.selection.$from.parent.type.name === 'figure'
+		// The browser's own up/down can't step into a caption that is taking up no room, nor
+		// past the picture above one, so the arrow keys are handled here: moving onto a
+		// picture lands in its caption, and moving on from the caption leaves the picture.
+		const arrow = direction => () => {
+			const { state, view } = this.editor
+			const { selection, doc } = state
+			const { $from } = selection
+			if (!selection.empty || $from.depth === 0) return false
+			if (inCaption()) {
+				const edge = doc.resolve(direction < 0 ? $from.before() : $from.after())
+				view.dispatch(state.tr.setSelection(Selection.near(edge, direction)).scrollIntoView())
+				return true
+			}
+			if (!view.endOfTextblock(direction < 0 ? 'up' : 'down')) return false
+			const neighbour = doc.maybeChild($from.index(0) + direction)
+			if (!neighbour || neighbour.type.name !== 'figure') return false
+			const start = direction < 0 ? $from.before(1) - neighbour.nodeSize : $from.after(1)
+			return this.editor.commands.setTextSelection(start + 1 + neighbour.content.size)
+		}
 		return {
+			ArrowUp: arrow(-1),
+			ArrowDown: arrow(1),
 			// Enter leaves the caption for a new paragraph below (rather than splitting the picture in two).
 			Enter: () => {
 				if (!inCaption()) return false
