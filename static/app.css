@@ -89,6 +89,12 @@ main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
 .ProseMirror hr.ProseMirror-selectednode { background: var(--accent-soft); }
 .ProseMirror .email-from, .ProseMirror .email-to { text-indent: 0; }
 
+.ProseMirror figure { margin: 0; }
+.ProseMirror figure img { display: block; margin: 0 auto; height: auto; user-select: none; }
+.ProseMirror figure.ProseMirror-selectednode img { outline: 2px solid var(--accent); }
+/* an empty caption shows a prompt (ProseMirror keeps a lone <br> in an empty text block) */
+.ProseMirror figcaption:has(> br:only-child)::before { content: "Caption"; color: #aaa; }
+
 /* a faint rule down the side of the block the cursor is in, for emails/journals/code */
 .ProseMirror div.email, .ProseMirror div.journal, .ProseMirror pre { position: relative; }
 .ProseMirror div.email::after, .ProseMirror div.journal::after, .ProseMirror pre::after {

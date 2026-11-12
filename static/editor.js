@@ -70,6 +70,96 @@ const Email = Node.create({
 	},
 })
 
+// A picture with a caption. The caption is the node's text; the picture is an attribute.
+const Figure = Node.create({
+	name: 'figure',
+	group: 'block',
+	content: 'inline*',
+	defining: true,
+	isolating: true,
+	draggable: true,
+	addAttributes() {
+		return { src: { default: null } }
+	},
+	parseHTML: () => [{
+		tag: 'figure',
+		contentElement: 'figcaption',
+		getAttrs: element => ({ src: element.querySelector('img')?.getAttribute('src') }),
+	}],
+	renderHTML: ({ node }) => ['figure', ['img', { src: node.attrs.src }], ['figcaption', 0]],
+	addNodeView() {
+		return ({ node }) => {
+			const dom = document.createElement('figure')
+			const image = document.createElement('img')
+			image.src = node.attrs.src
+			image.contentEditable = 'false'
+			image.draggable = false
+			const caption = document.createElement('figcaption')
+			dom.append(image, caption)
+			return { dom, contentDOM: caption }
+		}
+	},
+	addKeyboardShortcuts() {
+		const inCaption = () => this.editor.state.selection.$from.parent.type.name === 'figure'
+		return {
+			// Enter leaves the caption for a new paragraph below (rather than splitting the picture in two).
+			Enter: () => {
+				if (!inCaption()) return false
+				const after = this.editor.state.selection.$from.after()
+				return this.editor.chain()
+					.insertContentAt(after, { type: 'paragraph' })
+					.setTextSelection(after + 1)
+					.run()
+			},
+			// Backspace at the start of the caption removes the picture only once the caption is empty.
+			Backspace: () => {
+				const { selection } = this.editor.state
+				if (!inCaption() || !selection.empty || selection.$from.parentOffset > 0) return false
+				if (selection.$from.parent.content.size > 0) return true
+				const pos = selection.$from.before()
+				return this.editor.commands.command(({ tr }) => {
+					tr.replaceWith(pos, pos + selection.$from.parent.nodeSize, this.editor.schema.nodes.paragraph.create())
+					tr.setSelection(TextSelection.create(tr.doc, pos + 1))
+					return true
+				})
+			},
+		}
+	},
+})
+
+// Upload a picture file to the documents folder, then put it in the document below the
+// block the cursor is in (or in place of that block, if it is an empty paragraph).
+async function addPicture(file) {
+	let src
+	try {
+		const response = await api('POST', `/api/image?name=${encodeURIComponent(file.name || 'picture')}`, file)
+		src = (await response.json()).src
+	} catch (error) {
+		say(error.message.startsWith('415') ? 'Only PNG and JPEG pictures can be used' : `Could not add picture: ${error.message}`, true)
+		return false
+	}
+	const { state } = editor
+	const { $from } = state.selection
+	const figure = state.schema.nodes.figure.create({ src })
+	return editor.chain().focus().command(({ tr }) => {
+		const top = $from.depth > 0 ? $from.node(1) : null
+		let pos
+		if ($from.depth === 1 && top.type.name === 'paragraph' && top.content.size === 0) {
+			pos = $from.before(1)
+			tr.replaceWith(pos, pos + top.nodeSize, figure)
+		} else {
+			pos = top ? $from.after(1) : state.selection.to
+			tr.insert(pos, figure)
+		}
+		tr.setSelection(TextSelection.create(tr.doc, pos + 1)) // cursor in the caption
+		return true
+	}).run()
+}
+
+function pictureFiles(dataTransfer) {
+	return [...(dataTransfer?.files || [])].filter(file => file.type.startsWith('image/'))
+}
+
 // ---------------------------------------------------------------- block commands
 
 function enclosing(state, typeName) {
@@ -146,6 +236,11 @@ const BLOCKS = {
 		active: e => e.isActive('codeBlock'),
 		run: e => e.chain().focus().toggleCodeBlock().run(),
 	},
+	figure: {
+		label: 'Picture',
+		active: e => e.isActive('figure'),
+		run: () => $('picture-file').click(),
+	},
 	dinkus: {
 		label: 'Dinkus',
 		active: e => e.isActive('horizontalRule'),
@@ -178,7 +273,24 @@ function createEditor(html) {
 			emailField('emailFrom', 'email-from'),
 			emailField('emailTo', 'email-to'),
 			Email,
+			Figure,
 		],
+		editorProps: {
+			// pictures pasted from the clipboard (a screenshot, say) or dropped from a folder
+			handlePaste: (view, event) => {
+				const files = pictureFiles(event.clipboardData)
+				if (!files.length) return false
+				files.forEach(addPicture)
+				return true
+			},
+			handleDrop: (view, event) => {
+				const files = pictureFiles(event.dataTransfer)
+				if (!files.length) return false
+				event.preventDefault()
+				files.forEach(addPicture)
+				return true
+			},
+		},
 		content: html,
 		autofocus: 'start',
 		onUpdate: () => setDirty(true),
@@ -300,6 +412,11 @@ for (const button of document.querySelectorAll('[data-mark]')) {
 	button.addEventListener('click', () => editor.chain().focus().toggleMark(button.dataset.mark).run())
 }
 
+$('picture-file').addEventListener('change', async event => {
+	for (const file of event.target.files) await addPicture(file)
+	event.target.value = '' // so choosing the same file again still fires
+})
+
 $('save').addEventListener('click', save)
 $('export').addEventListener('click', exportRtf)
 $('new').addEventListener('click', newFile)
@@ -339,4 +456,4 @@ if (files.length) {
 	say('No documents yet. Click New to start one.')
 	createEditor('<p></p>')
 }
-window.bookEditor = { get editor() { return editor } } // handy in the browser console
+window.bookEditor = { get editor() { return editor }, addPicture } // handy in the browser console

@@ -26,6 +26,7 @@ STATIC = HERE / 'static'
 VENDOR = HERE / 'vendor'
 HOST = '127.0.0.1'
 PORT = 8765
+IMAGE_EXTENSIONS = {'png': '.png', 'jpeg': '.jpg'}
 RESTART_DELAY = 1  # seconds between Ctrl+C and the restart
 WATCH_INTERVAL = 0.5  # seconds between checks for changed code
 WATCH_SKIP = {'vendor', 'documents', 'static', '__pycache__'}
@@ -100,19 +101,47 @@ def save_doc(name):
 	return jsonify(saved=str(path))
 
 
+@app.get('/images/<path:name>')
+def read_image(name):
+	# documents refer to their pictures as "images/<file>", relative to the documents folder
+	return send_from_directory(docs_dir / 'images', name)
+
+
+@app.post('/api/image')
+def save_image():
+	"""Store an uploaded picture in <documents>/images and say what to call it."""
+	data = request.get_data()
+	info = bookdoc.image_info(data)
+	if not info:
+		abort(415, 'only PNG and JPEG pictures can be used')
+	stem = re.sub(r'[^\w\- ()]+', '-', Path(request.args.get('name') or 'picture').stem).strip('- ') or 'picture'
+	folder = docs_dir / 'images'
+	folder.mkdir(exist_ok=True)
+	number = 1
+	while True:
+		path = folder / f"{stem}{'' if number == 1 else f'-{number}'}{IMAGE_EXTENSIONS[info[0]]}"
+		if not path.exists():
+			path.write_bytes(data)
+			break
+		if path.read_bytes() == data:
+			break  # the same picture again: reuse it
+		number += 1
+	return jsonify(src=f'images/{path.name}')
+
+
 @app.post('/api/export/<name>')
 def export_doc(name):
 	path = doc_path(name)
 	if not path.exists():
 		abort(404)
 	target = path.with_suffix('.rtf')
-	write_atomic(target, bookdoc.html_to_rtf(path.read_text(encoding='utf-8')), encoding='ascii')
+	write_atomic(target, bookdoc.html_to_rtf(path.read_text(encoding='utf-8'), base_dir=path.parent), encoding='ascii')
 	return jsonify(exported=str(target))
 
 
 @app.after_request
 def no_cache(response):
-	response.headers['Cache-Control'] = 'no-store' if request.path.startswith(('/api', '/styles.css', '/static')) or request.path == '/' else 'max-age=86400'
+	response.headers['Cache-Control'] = 'no-store' if request.path.startswith(('/api', '/styles.css', '/static', '/images')) or request.path == '/' else 'max-age=86400'
 	return response
 
 

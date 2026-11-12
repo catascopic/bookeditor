@@ -33,6 +33,11 @@
 			"font": "Courier New", "size": 10, "indent_in": 0.5,
 			"space_before": 10, "space_after": 10, "para_spacing": 10
 		},
+		"figure": {
+			"_comment": "A picture with a caption. The caption takes its font and size from 'body'.",
+			"indent_in": 0.5, "max_width_in": 5.0,
+			"space_before": 10, "space_after": 10, "caption_gap": 6
+		},
 		"code": {
 			"font": "IBM Plex Mono", "size": 10, "bold": true, "indent_in": 0.5,
 			"space_before": 10, "space_after": 10, "keep_with_next": true

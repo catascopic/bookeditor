@@ -7,6 +7,7 @@ A document on disk is plain HTML with one block per line, using only these shape
 	<p>…</p>                        body paragraph
 	<hr>                            dinkus
 	<pre><code>…</code></pre>       code block
+	<figure><img src="images/x.png"><figcaption>…</figcaption></figure>   picture with caption
 	<div class="journal"><p>…</p>…</div>
 	<div class="email"><div class="email-from">…</div><div class="email-to">…</div><p>…</p>…</div>
 
@@ -16,6 +17,7 @@ Can also be run directly:  python bookdoc.py chapter.html  ->  writes chapter.rt
 """
 import json
 import re
+import struct
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
@@ -38,6 +40,7 @@ class _DocParser(HTMLParser):
 		super().__init__(convert_charrefs=True)
 		self.blocks = []
 		self.container = None  # the email/journal block being filled, if any
+		self.figure = None  # the picture block being filled, if any
 		self.runs = None  # runs of the text block being read, if any
 		self.kind = None
 		self.marks = []
@@ -54,6 +57,12 @@ class _DocParser(HTMLParser):
 			self.container = {'type': 'email', 'from': [], 'to': [], 'paras': []}
 		elif tag == 'div' and 'journal' in classes:
 			self.container = {'type': 'journal', 'paras': []}
+		elif tag == 'figure':
+			self.figure = {'type': 'figure', 'src': None, 'runs': []}
+		elif tag == 'img' and self.figure is not None:
+			self.figure['src'] = dict(attrs).get('src')
+		elif tag == 'figcaption':
+			self._open('caption')
 		elif tag == 'hr':
 			self.blocks.append({'type': 'dinkus'})
 		elif tag == 'br':
@@ -62,8 +71,11 @@ class _DocParser(HTMLParser):
 			self.marks.append(MARK_TAGS[tag])
 
 	def handle_endtag(self, tag):
-		if tag in TEXT_TAGS or (tag == 'div' and self.runs is not None):
+		if tag in TEXT_TAGS or tag == 'figcaption' or (tag == 'div' and self.runs is not None):
 			self._close()
+		elif tag == 'figure' and self.figure is not None:
+			self.blocks.append(self.figure)
+			self.figure = None
 		elif tag == 'div' and self.container is not None:
 			self.blocks.append(self.container)
 			self.container = None
@@ -87,7 +99,10 @@ class _DocParser(HTMLParser):
 			return
 		kind, runs = self.kind, self.runs
 		self.kind = self.runs = None
-		if kind in ('from', 'to'):
+		if kind == 'caption':
+			if self.figure is not None:
+				self.figure['runs'] = runs
+		elif kind in ('from', 'to'):
 			if self.container and self.container['type'] == 'email':
 				self.container[kind] = runs
 		elif kind == 'para' and self.container is not None:
@@ -103,7 +118,7 @@ def parse_html(html: str) -> list[dict]:
 	return parser.blocks
 
 
-_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|<hr[^>]*>|<div class="(?:email|journal)">)(?!\n)')
+_BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|<div class="(?:email|journal)">)(?!\n)')
 
 
 def tidy_html(html: str) -> str:
@@ -140,8 +155,28 @@ def _escape(text: str) -> str:
 	return ''.join(out)
 
 
+IMAGE_SRC_RE = re.compile(r'^images/[\w\- .()]+\.(png|jpe?g)$', re.IGNORECASE)
+SCREEN_DPI = 96  # a picture's natural size on screen: 96 pixels to the inch
+
+
+def image_info(data: bytes):
+	"""(kind, width, height) in pixels for a PNG or JPEG, or None for anything else."""
+	if data[:8] == b'\x89PNG\r\n\x1a\n' and len(data) >= 24:
+		return ('png', *struct.unpack('>II', data[16:24]))
+	if data[:2] == b'\xff\xd8':
+		i = 2
+		while i + 9 < len(data) and data[i] == 0xFF:
+			marker = data[i + 1]
+			if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):  # a start-of-frame segment
+				height, width = struct.unpack('>HH', data[i + 5:i + 9])
+				return ('jpeg', width, height)
+			i += 2 + struct.unpack('>H', data[i + 2:i + 4])[0]
+	return None
+
+
 class _RtfBuilder:
-	def __init__(self, styles):
+	def __init__(self, styles, base_dir=None):
+		self.base_dir = Path(base_dir) if base_dir else None
 		self.styles = styles
 		self.blocks = styles['blocks']
 		self.fonts = []
@@ -176,6 +211,7 @@ class _RtfBuilder:
 		for word, value in (
 			('fi', _twips_in(style.get('first_line_in'))),
 			('li', _twips_in(style.get('indent_in'))),
+			('ri', _twips_in(style.get('right_indent_in'))),
 			('sb', _twips_pt(before)),
 			('sa', _twips_pt(after)),
 		):
@@ -200,8 +236,43 @@ class _RtfBuilder:
 				before=first_before if i == 0 else 0,
 				after=style.get('space_after') if last else style.get('para_spacing'))
 
+	def picture(self, src, style):
+		"""The RTF for an embedded picture, scaled down if it is wider than the style allows."""
+		data = None
+		if self.base_dir and src and IMAGE_SRC_RE.match(src):
+			try:
+				data = (self.base_dir / src).read_bytes()
+			except OSError:
+				pass
+		info = data and image_info(data)
+		if not info:
+			return _escape(f'[missing picture: {src}]')
+		kind, width, height = info
+		width_in = min(width / SCREEN_DPI, style.get('max_width_in') or width / SCREEN_DPI)
+		height_in = width_in * height / width
+		digits = data.hex()
+		lines = '\n'.join(digits[i:i + 128] for i in range(0, len(digits), 128))
+		return (
+			f'{{\\pict\\{kind}blip\\picw{width}\\pich{height}'
+			f'\\picwgoal{_twips_in(width_in)}\\pichgoal{_twips_in(height_in)}\n{lines}}}')
+
+	def figure(self, block):
+		style, body = self.blocks['figure'], self.blocks['body']
+		# centred, in the body's font, held in from both margins like the other set-off blocks
+		text = {
+			'font': body['font'], 'size': body['size'], 'bold': body.get('bold'), 'italic': body.get('italic'),
+			'align': 'center', 'indent_in': style.get('indent_in'), 'right_indent_in': style.get('indent_in')}
+		captioned = any(t.strip() for t, _ in block['runs'])
+		self.para(
+			{**text, 'keep_with_next': captioned}, self.picture(block['src'], style),
+			before=style.get('space_before'), after=style.get('caption_gap') if captioned else style.get('space_after'))
+		if captioned:
+			self.para(text, self.runs(block['runs'], text), after=style.get('space_after'))
+
 	def block(self, block):
 		kind = block['type']
+		if kind == 'figure':
+			return self.figure(block)
 		style = self.blocks[kind]
 		before, after = style.get('space_before'), style.get('space_after')
 		if kind == 'dinkus':
@@ -229,12 +300,13 @@ class _RtfBuilder:
 			+ ''.join(self.out) + '}\n')
 
 
-def to_rtf(blocks: list[dict], styles=None) -> str:
-	return _RtfBuilder(styles or load_styles()).document(blocks)
+def to_rtf(blocks: list[dict], styles=None, base_dir=None) -> str:
+	"""base_dir is the folder the document lives in; pictures are found relative to it."""
+	return _RtfBuilder(styles or load_styles(), base_dir).document(blocks)
 
 
-def html_to_rtf(html: str, styles=None) -> str:
-	return to_rtf(parse_html(html), styles)
+def html_to_rtf(html: str, styles=None, base_dir=None) -> str:
+	return to_rtf(parse_html(html), styles, base_dir)
 
 
 # ---------------------------------------------------------------- styles -> CSS
@@ -290,6 +362,12 @@ def to_css(styles=None) -> str:
 	rules.append(f"{root} .email-from, {root} .email-to {{ {_css_text(e, e.get('header_font'), e.get('header_bold'))}}}")
 	rules.append(f"{root} .email-from::before {{ content: {_css_string(e['from_label'])}; }}")
 	rules.append(f"{root} .email-to::before {{ content: {_css_string(e['to_label'])}; }}")
+	f, body = b['figure'], b['body']
+	rules.append(
+		f"{root} figure {{ {_css_text({**body, 'align': 'center'})}"
+		f"padding: {f.get('space_before', 0)}pt {f.get('indent_in', 0)}in {f.get('space_after', 0)}pt; text-indent: 0; }}")
+	rules.append(f"{root} figure img {{ max-width: min(100%, {f.get('max_width_in', 100)}in); }}")
+	rules.append(f"{root} figcaption {{ padding-top: {f.get('caption_gap', 0)}pt; }}")
 	# toolbar buttons are drawn in the font of the thing they produce
 	for kind in ('body', 'chapter', 'section', 'email', 'journal', 'code'):
 		s = b[kind]
@@ -306,5 +384,5 @@ if __name__ == '__main__':
 		sys.exit('usage: python bookdoc.py chapter.html')
 	source = Path(sys.argv[1])
 	target = source.with_suffix('.rtf')
-	target.write_text(html_to_rtf(source.read_text(encoding='utf-8')), encoding='ascii', newline='\n')
+	target.write_text(html_to_rtf(source.read_text(encoding='utf-8'), base_dir=source.parent), encoding='ascii', newline='\n')
 	print(f'wrote {target}')
