@@ -591,6 +591,9 @@ const StyleShortcuts = Extension.create({
 			'Mod-Alt-0': () => (applyStyle('body'), true),
 			'Mod-Alt-e': () => (applyStyle('email'), true),
 			'Mod-Alt-j': () => (applyStyle('journal'), true),
+			// Ctrl+B and Ctrl+I inside inline code: the same as the buttons. Elsewhere TipTap's own handle them.
+			'Mod-b': () => editor.isActive('code') && applyMark('bold'),
+			'Mod-i': () => editor.isActive('code') && applyMark('italic'),
 		}
 	},
 })
@@ -676,7 +679,8 @@ function refreshToolbar() {
 	for (const button of document.querySelectorAll('[data-mark]')) {
 		const mark = button.dataset.mark
 		button.classList.toggle('active', editor.isActive(mark))
-		button.disabled = !editor.can().toggleMark(mark)
+		// bold and italic can be applied inside inline code, where they take the code off first
+		button.disabled = !(mark !== 'code' && editor.isActive('code')) && !editor.can().toggleMark(mark)
 	}
 	$('status-block').textContent = current
 	const words = editor.getText().trim().split(/\s+/).filter(Boolean).length
@@ -793,9 +797,16 @@ document.addEventListener('mousedown', event => {
 document.addEventListener('keydown', event => {
 	if (event.key === 'Escape') closeStyleMenu()
 })
+// Bold and italic can't sit inside inline code, so applying one there takes the code off first.
+function applyMark(mark) {
+	const chain = editor.chain().focus()
+	if (mark !== 'code' && editor.isActive('code')) chain.unsetMark('code')
+	return chain.toggleMark(mark).run()
+}
+
 for (const button of document.querySelectorAll('[data-mark]')) {
 	button.addEventListener('mousedown', event => event.preventDefault())
-	button.addEventListener('click', () => editor.chain().focus().toggleMark(button.dataset.mark).run())
+	button.addEventListener('click', () => applyMark(button.dataset.mark))
 }
 
 $('picture-file').addEventListener('change', async event => {
