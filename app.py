@@ -1,25 +1,35 @@
 """Book editor: a small local web app.
 
-	python app.py [folder-with-your-chapters]
+	python app.py [folder-with-your-chapters] [--port N]
 
-then open http://127.0.0.1:8765 in a browser.  Documents are the .html files in the folder
+then open http://127.0.0.1:8765 in a browser.  The server restarts itself when a .py file
+changes, and on Ctrl+C (press it twice to quit).  Documents are the .html files in the folder
 (default: documents).  "Export RTF" writes a .rtf next to the .html.
 """
-import json
+import argparse
 import os
 import re
+import socket
+import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
+from werkzeug.serving import make_server
 
 import bookdoc
 
 HERE = Path(__file__).parent
 STATIC = HERE / 'static'
 VENDOR = HERE / 'vendor'
+HOST = '127.0.0.1'
 PORT = 8765
+RESTART_DELAY = 1  # seconds between Ctrl+C and the restart
+WATCH_INTERVAL = 0.5  # seconds between checks for changed code
+WATCH_SKIP = {'vendor', 'documents', 'static', '__pycache__'}
+CHILD_ENV = 'BOOKEDITOR_SERVER'  # set in the process that actually serves
 NAME_RE = re.compile(r'^[\w\- .()]+\.html$')
 
 app = Flask(__name__, static_folder=None)
@@ -106,13 +116,98 @@ def no_cache(response):
 	return response
 
 
-if __name__ == '__main__':
-	if len(sys.argv) > 1:
-		docs_dir = Path(sys.argv[1]).resolve()
-	docs_dir.mkdir(parents=True, exist_ok=True)
+def source_snapshot():
+	"""Modification times of every .py file in the project, to notice code changes.
+
+	Watching the whole folder is simpler than tracking which modules are imported, and it
+	also covers a file that failed to import. Pages, scripts and styles.json are read fresh
+	on each request, so they need no restart -- only a browser refresh.
+	"""
+	snapshot = {}
+	for folder, subfolders, files in os.walk(HERE):
+		subfolders[:] = [d for d in subfolders if d not in WATCH_SKIP and not d.startswith('.')]
+		for name in files:
+			if name.endswith('.py'):
+				path = os.path.join(folder, name)
+				try:
+					snapshot[path] = os.stat(path).st_mtime_ns
+				except OSError:
+					pass  # deleted or mid-save
+	return snapshot
+
+
+def require_free_port(port):
+	with socket.socket() as probe:
+		try:
+			probe.bind((HOST, port))
+		except OSError:
+			raise SystemExit(
+				f'Port {port} is already in use. Is the editor already running? '
+				f'Stop that copy, or pick another port with --port.') from None
+
+
+def supervise(port):
+	"""Run the server in a child process, and start a new one when asked to.
+
+	- A .py file changes: restart straight away.
+	- Ctrl+C: restart after RESTART_DELAY seconds; a second Ctrl+C in that time exits.
+	- The server dies by itself (say, a syntax error in an edit): wait for the next code
+	  change and try again.
+
+	The supervisor itself only ever runs this function, so it survives any broken edit.
+	"""
+	require_free_port(port)
+	while True:
+		before = source_snapshot()
+		child = subprocess.Popen([sys.executable, *sys.argv], env={**os.environ, CHILD_ENV: '1'})
+		try:
+			while child.poll() is None and source_snapshot() == before:
+				time.sleep(WATCH_INTERVAL)
+			if child.poll() is None:
+				print('\n--- code changed, restarting ---', flush=True)
+				child.terminate()
+				child.wait()
+				continue
+			print(f'\n--- server stopped (exit code {child.returncode}); '
+				'waiting for a code change to try again, Ctrl+C to restart now ---', flush=True)
+			while source_snapshot() == before:
+				time.sleep(WATCH_INTERVAL)
+		except KeyboardInterrupt:
+			try:
+				# the child shares this console, so it received the same Ctrl+C
+				try:
+					child.wait(timeout=5)
+				except subprocess.TimeoutExpired:
+					child.terminate()
+					child.wait()
+				print(f'\nRestarting in {RESTART_DELAY:g}s (press Ctrl+C again to exit)', flush=True)
+				time.sleep(RESTART_DELAY)
+			except KeyboardInterrupt:
+				if child.poll() is None:
+					child.terminate()
+				return
+
+
+def serve(port):
 	if not (VENDOR / 'importmap.json').exists():
 		sys.exit('TipTap is not downloaded yet. Run:  python fetch_vendor.py')
+	docs_dir.mkdir(parents=True, exist_ok=True)
 	print(f'Documents folder: {docs_dir}')
-	print(f'Open http://127.0.0.1:{PORT}')
-	# the reloader restarts the server by itself whenever one of the .py files is edited
-	app.run(host='127.0.0.1', port=PORT, use_reloader=True)
+	print(f'Open http://{HOST}:{port}', flush=True)
+	try:
+		make_server(HOST, port, app, threaded=True).serve_forever()
+	except KeyboardInterrupt:
+		pass
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Book editor server')
+	parser.add_argument('folder', nargs='?', help='folder holding your chapters (default: documents)')
+	parser.add_argument('-p', '--port', type=int, default=PORT, help=f'server port number (default: {PORT})')
+	args = parser.parse_args()
+	if os.environ.get(CHILD_ENV):
+		if args.folder:
+			docs_dir = Path(args.folder).resolve()
+		serve(args.port)
+	else:
+		supervise(args.port)
