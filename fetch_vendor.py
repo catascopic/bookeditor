@@ -22,6 +22,7 @@ ROOTS = {
 	'@tiptap/core': ('@tiptap/core', '2', ''),
 	'@tiptap/starter-kit': ('@tiptap/starter-kit', '2', ''),
 	'@tiptap/pm/state': ('@tiptap/pm', '2', '/state'),
+	'@tiptap/pm/view': ('@tiptap/pm', '2', '/view'),
 }
 
 # The book's fonts, as web fonts, so the editor shows them even where they aren't installed.

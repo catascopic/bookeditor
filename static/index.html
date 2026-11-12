@@ -36,6 +36,7 @@
 		<button data-mark="code" title="Inline code, within a line of text (Ctrl+E)">code</button>
 	</div>
 	<div class="group right">
+		<button id="senders" title="Set the colour used for each email sender">Senders…</button>
 		<select id="zoom" title="Zoom">
 			<option value="1">100%</option>
 			<option value="1.25">125%</option>
@@ -53,6 +54,18 @@
 	<span id="status-words"></span>
 	<span id="status-message"></span>
 </footer>
+<dialog id="senders-dialog">
+	<form method="dialog">
+		<h2>Email senders</h2>
+		<p class="hint">An email takes the colour of the sender named in its From line. Capitals don't matter. These settings apply to every document in this folder.</p>
+		<div id="sender-rows"></div>
+		<button type="button" id="sender-add">Add sender</button>
+		<menu>
+			<button type="button" id="senders-cancel">Cancel</button>
+			<button value="save" class="primary">Save</button>
+		</menu>
+	</form>
+</dialog>
 <script type="module" src="/static/editor.js"></script>
 </body>
 </html>

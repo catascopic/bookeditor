@@ -7,6 +7,7 @@ changes, and on Ctrl+C (press it twice to quit).  Documents are the .html files 
 (default: documents).  "Export RTF" writes a .rtf next to the .html.
 """
 import argparse
+import json
 import os
 import re
 import socket
@@ -99,6 +100,18 @@ def save_doc(name):
 		abort(409, 'file already exists')
 	write_atomic(path, bookdoc.tidy_html(request.get_data(as_text=True)))
 	return jsonify(saved=str(path))
+
+
+@app.get('/api/senders')
+def read_senders():
+	return jsonify(senders=bookdoc.load_senders(docs_dir))
+
+
+@app.put('/api/senders')
+def save_senders():
+	senders = bookdoc.clean_senders(request.get_json(force=True))
+	write_atomic(docs_dir / bookdoc.SENDERS_FILE, json.dumps(senders, indent='\t', ensure_ascii=False) + '\n')
+	return jsonify(senders=senders)
 
 
 @app.get('/images/<path:name>')

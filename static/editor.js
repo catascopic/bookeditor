@@ -1,6 +1,7 @@
-import { Editor, Node } from '@tiptap/core'
+import { Editor, Extension, Node } from '@tiptap/core'
 import { StarterKit } from '@tiptap/starter-kit'
-import { TextSelection } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // ---------------------------------------------------------------- custom block types
 //
@@ -69,6 +70,120 @@ const Email = Node.create({
 		}
 	},
 })
+
+// ---------------------------------------------------------------- email sender colours
+//
+// Senders and their colours are a setting of the documents folder (senders.json), not of
+// any one document. An email is coloured by looking its From line up in that list, so
+// nothing about colour is stored in the document itself.
+
+let senders = [] // [{ name, color }]
+
+const senderKey = name => name.trim().split(/\s+/).join(' ').toLowerCase()
+
+// White or black, whichever reads better on the colour (same rule as bookdoc.text_color_on).
+function textColorOn(color) {
+	const [r, g, b] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255)
+	return 0.299 * r + 0.587 * g + 0.114 * b > 0.6 ? '#000000' : '#ffffff'
+}
+
+const SenderColors = Extension.create({
+	name: 'senderColors',
+	addProseMirrorPlugins() {
+		return [new Plugin({
+			props: {
+				decorations(state) {
+					const colors = new Map(senders.map(sender => [senderKey(sender.name), sender.color]))
+					const decorations = []
+					state.doc.forEach((node, pos) => {
+						if (node.type.name !== 'email') return
+						const color = colors.get(senderKey(node.firstChild.textContent))
+						if (!color) return
+						decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+							style: `--sender: ${color}; --sender-text: ${textColorOn(color)}`,
+						}))
+					})
+					return DecorationSet.create(state.doc, decorations)
+				},
+			},
+		})]
+	},
+})
+
+async function loadSenders() {
+	try {
+		senders = (await (await api('GET', '/api/senders')).json()).senders
+	} catch {
+		senders = []
+	}
+}
+
+// The Senders dialog: one row per sender, with a colour and the name as written in From.
+function senderRow(sender) {
+	const row = document.createElement('div')
+	row.className = 'sender-row'
+	const color = Object.assign(document.createElement('input'), { type: 'color', value: sender.color, title: 'Colour' })
+	const name = Object.assign(document.createElement('input'), {
+		type: 'text', value: sender.name, placeholder: 'Name, as written after From:', spellcheck: false,
+	})
+	const preview = Object.assign(document.createElement('span'), { className: 'sender-preview' })
+	const paint = () => {
+		preview.textContent = `From: ${name.value || '…'}`
+		preview.style.background = color.value
+		preview.style.color = textColorOn(color.value)
+	}
+	color.addEventListener('input', paint)
+	name.addEventListener('input', paint)
+	paint()
+	const remove = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Remove' })
+	remove.addEventListener('click', () => row.remove())
+	row.append(color, name, preview, remove)
+	return row
+}
+
+// Names used in From lines of the open document that have no colour yet: offered as rows to fill in.
+function unlistedSenders() {
+	const known = new Set(senders.map(sender => senderKey(sender.name)))
+	const names = []
+	editor.state.doc.forEach(node => {
+		if (node.type.name !== 'email') return
+		const name = node.firstChild.textContent.trim()
+		if (name && !known.has(senderKey(name))) {
+			known.add(senderKey(name))
+			names.push(name)
+		}
+	})
+	return names
+}
+
+const NEW_SENDER_COLORS = ['#b3261e', '#1a5fb4', '#26734d', '#8e44ad', '#b25e00', '#0e7c86', '#a3195b', '#5c6b1e']
+
+function openSenders() {
+	const rows = $('sender-rows')
+	const fresh = unlistedSenders().map((name, i) => ({
+		name, color: NEW_SENDER_COLORS[(senders.length + i) % NEW_SENDER_COLORS.length],
+	}))
+	rows.replaceChildren(...[...senders, ...fresh].map(senderRow))
+	$('senders-dialog').returnValue = '' // so Escape after an earlier Save doesn't save again
+	$('senders-dialog').showModal()
+}
+
+async function saveSenders() {
+	const list = [...document.querySelectorAll('#sender-rows .sender-row')]
+		.map(row => ({ color: row.children[0].value, name: row.children[1].value.trim() }))
+		.filter(sender => sender.name)
+	try {
+		const response = await fetch('/api/senders', {
+			method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(list),
+		})
+		if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
+		senders = (await response.json()).senders
+		editor.view.dispatch(editor.state.tr) // redraw the emails in their new colours
+		say('Senders saved')
+	} catch (error) {
+		say(`Could not save senders: ${error.message}`, true)
+	}
+}
 
 // A picture with a caption. The caption is the node's text; the picture is an attribute.
 const Figure = Node.create({
@@ -273,6 +388,7 @@ function createEditor(html) {
 			emailField('emailFrom', 'email-from'),
 			emailField('emailTo', 'email-to'),
 			Email,
+			SenderColors,
 			Figure,
 		],
 		editorProps: {
@@ -417,6 +533,18 @@ $('picture-file').addEventListener('change', async event => {
 	event.target.value = '' // so choosing the same file again still fires
 })
 
+$('senders').addEventListener('click', openSenders)
+$('sender-add').addEventListener('click', () => {
+	const count = document.querySelectorAll('#sender-rows .sender-row').length
+	const row = senderRow({ name: '', color: NEW_SENDER_COLORS[count % NEW_SENDER_COLORS.length] })
+	$('sender-rows').append(row)
+	row.children[1].focus()
+})
+$('senders-cancel').addEventListener('click', () => $('senders-dialog').close(''))
+$('senders-dialog').addEventListener('close', event => {
+	if (event.target.returnValue === 'save') saveSenders()
+})
+
 $('save').addEventListener('click', save)
 $('export').addEventListener('click', exportRtf)
 $('new').addEventListener('click', newFile)
@@ -448,6 +576,7 @@ window.addEventListener('beforeunload', event => {
 })
 
 applyZoom(recall('zoom') || '1.25')
+await loadSenders()
 const files = await refreshFiles()
 if (files.length) {
 	const last = recall('lastFile')

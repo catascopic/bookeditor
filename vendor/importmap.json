@@ -2,6 +2,7 @@
 	"imports": {
 		"@tiptap/core": "/npm/@tiptap/core@2.27.3/+esm",
 		"@tiptap/starter-kit": "/npm/@tiptap/starter-kit@2.27.3/+esm",
-		"@tiptap/pm/state": "/npm/@tiptap/pm@2.27.3/state/+esm"
+		"@tiptap/pm/state": "/npm/@tiptap/pm@2.27.3/state/+esm",
+		"@tiptap/pm/view": "/npm/@tiptap/pm@2.27.3/view/+esm"
 	}
 }

@@ -15,6 +15,7 @@ Inline: <strong>, <em>, <code> (inline code) and <br>.
 
 Can also be run directly:  python bookdoc.py chapter.html  ->  writes chapter.rtf
 """
+import colorsys
 import json
 import re
 import struct
@@ -31,6 +32,44 @@ TEXT_TAGS = {'h1': 'chapter', 'h2': 'section', 'p': 'para', 'pre': 'code'}
 
 def load_styles():
 	return json.loads(STYLES_PATH.read_text(encoding='utf-8'))
+
+
+# ---------------------------------------------------------------- email senders
+#
+# Each folder of documents has a senders.json: [{"name": "ALICE", "color": "#b3261e"}, ...].
+# An email whose From line is that name (capitals and spacing aside) is drawn in that colour.
+
+SENDERS_FILE = 'senders.json'
+COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+def clean_senders(senders) -> list[dict]:
+	"""Keep only well-formed entries, so nothing odd reaches the page's CSS or the RTF."""
+	cleaned = []
+	for sender in senders if isinstance(senders, list) else []:
+		if not isinstance(sender, dict):
+			continue
+		name, color = str(sender.get('name') or '').strip(), str(sender.get('color') or '')
+		if name and COLOR_RE.match(color):
+			cleaned.append({'name': name, 'color': color.lower()})
+	return cleaned
+
+
+def load_senders(base_dir) -> list[dict]:
+	try:
+		return clean_senders(json.loads((Path(base_dir) / SENDERS_FILE).read_text(encoding='utf-8')))
+	except (OSError, ValueError, TypeError):
+		return []
+
+
+def sender_key(name: str) -> str:
+	return ' '.join(name.split()).casefold()
+
+
+def text_color_on(color: str) -> str:
+	"""White or black, whichever reads better on the given background colour."""
+	r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+	return '#000000' if colorsys.rgb_to_yiq(r / 255, g / 255, b / 255)[0] > 0.6 else '#ffffff'
 
 
 # ---------------------------------------------------------------- HTML -> blocks
@@ -180,7 +219,15 @@ class _RtfBuilder:
 		self.styles = styles
 		self.blocks = styles['blocks']
 		self.fonts = []
+		self.colors = []
+		self.senders = {sender_key(s['name']): s['color'] for s in load_senders(base_dir)} if base_dir else {}
 		self.out = []
+
+	def color(self, color):
+		"""Index of a #rrggbb colour in the RTF colour table (which counts from 1; 0 is 'automatic')."""
+		if color not in self.colors:
+			self.colors.append(color)
+		return self.colors.index(color) + 1
 
 	def font(self, name):
 		if name not in self.fonts:
@@ -202,7 +249,7 @@ class _RtfBuilder:
 			parts.append(f'{{{codes} {_escape(text)}}}' if codes else _escape(text))
 		return ''.join(parts)
 
-	def para(self, style, content, before=0, after=0, font=None, bold=None):
+	def para(self, style, content, before=0, after=0, font=None, bold=None, para_codes='', char_codes=''):
 		bold = style.get('bold') if bold is None else bold
 		codes = ['\\pard']
 		if style.get('keep_with_next'):
@@ -217,6 +264,7 @@ class _RtfBuilder:
 		):
 			if value:
 				codes.append(f'\\{word}{value}')
+		codes.append(para_codes)
 		codes.append('\\sl240\\slmult1')
 		if style.get('align') == 'center':
 			codes.append('\\qc')
@@ -225,16 +273,35 @@ class _RtfBuilder:
 			codes.append('\\b')
 		if style.get('italic'):
 			codes.append('\\i')
+		codes.append(char_codes)
 		self.out.append(f"{''.join(codes)} {content}\\par\n")
 
-	def container(self, style, paras, first_before):
+	def container(self, style, paras, first_before, **extra):
 		"""Paragraphs of an email or journal: spaced apart, with the block's own space at the ends."""
 		for i, runs in enumerate(paras):
 			last = i == len(paras) - 1
 			self.para(
 				style, self.runs(runs, style),
 				before=first_before if i == 0 else 0,
-				after=style.get('space_after') if last else style.get('para_spacing'))
+				after=style.get('space_after') if last else style.get('para_spacing'), **extra)
+
+	def email(self, block, style):
+		"""A box in the sender's colour, with From/To on a band of that colour across the top.
+
+		RTF has no boxes as such: each paragraph gets the same border on all four sides, and
+		word processors that honour paragraph borders (Word does) join neighbours into one box.
+		"""
+		sender = sender_key(''.join(text for text, _ in block['from']))
+		color = self.senders.get(sender) or style.get('default_color') or '#000000'
+		ink, paper = self.color(color), self.color(text_color_on(color))
+		width, gap = _twips_pt(style.get('border_width', 1)), _twips_pt(style.get('box_padding'))
+		box = ''.join(f'\\brdr{side}\\brdrs\\brdrw{width}\\brsp{gap}\\brdrcf{ink}' for side in 'tlbr')
+		band = dict(
+			font=style.get('header_font'), bold=style.get('header_bold'),
+			para_codes=f'{box}\\cbpat{ink}', char_codes=f'\\cf{paper}')
+		self.para(style, _escape(style['from_label']) + self.runs(block['from'], style), before=style.get('space_before'), **band)
+		self.para(style, _escape(style['to_label']) + self.runs(block['to'], style), **band)
+		self.container(style, block['paras'], first_before=0, para_codes=box)
 
 	def picture(self, src, style):
 		"""The RTF for an embedded picture, scaled down if it is wider than the style allows."""
@@ -280,10 +347,7 @@ class _RtfBuilder:
 			content = ''.join(c if c == ' ' else f'{{\\f{symbol} {_escape(c)}}}' for c in style['text'])
 			self.para(style, content, before, after)
 		elif kind == 'email':
-			header = dict(font=style.get('header_font'), bold=style.get('header_bold'))
-			self.para(style, _escape(style['from_label']) + self.runs(block['from'], style), before=before, **header)
-			self.para(style, _escape(style['to_label']) + self.runs(block['to'], style), **header)
-			self.container(style, block['paras'], first_before=0)
+			self.email(block, style)
 		elif kind == 'journal':
 			self.container(style, block['paras'], first_before=before)
 		else:
@@ -293,9 +357,12 @@ class _RtfBuilder:
 		for block in blocks:
 			self.block(block)
 		fonts = ''.join(f'{{\\f{i}\\fnil\\fcharset0 {name};}}' for i, name in enumerate(self.fonts))
+		colors = ''.join(
+			f'\\red{int(c[1:3], 16)}\\green{int(c[3:5], 16)}\\blue{int(c[5:7], 16)};' for c in self.colors)
 		return (
 			'{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033'
 			f'{{\\fonttbl{fonts}}}\n'
+			+ (f'{{\\colortbl ;{colors}}}\n' if colors else '') +
 			'{\\*\\generator bookeditor;}\\viewkind4\\uc1\n'
 			+ ''.join(self.out) + '}\n')
 
@@ -353,13 +420,28 @@ def to_css(styles=None) -> str:
 	inline_code = styles['inline_code']
 	inline_code_css = f"font-family: {_family(inline_code['font'])}; font-weight: {'bold' if inline_code.get('bold') else 'inherit'};"
 	rules.append(f"{root} :not(pre) > code {{ {inline_code_css} }}")
-	for kind in ('email', 'journal'):
-		s = b[kind]
-		rules.append(f'{root} div.{kind} {{ {_css_text(s)}{_css_box(s)}}}')
-		rules.append(f"{root} div.{kind} > p {{ margin-bottom: {s.get('para_spacing', 0)}pt; }}")
-		rules.append(f'{root} div.{kind} > p:last-child {{ margin-bottom: 0; }}')
+	s = b['journal']
+	rules.append(f'{root} div.journal {{ {_css_text(s)}{_css_box(s)}}}')
+	rules.append(f"{root} div.journal > p {{ margin-bottom: {s.get('para_spacing', 0)}pt; }}")
+	rules.append(f'{root} div.journal > p:last-child {{ margin-bottom: 0; }}')
+	# An email is a box in the sender's colour. The editor sets --sender and --sender-text on
+	# each email from its From line; without them the default colour applies.
 	e = b['email']
-	rules.append(f"{root} .email-from, {root} .email-to {{ {_css_text(e, e.get('header_font'), e.get('header_bold'))}}}")
+	pad = f"{e.get('box_padding', 0)}pt"
+	default = e.get('default_color', '#000000')
+	sender, sender_text = f'var(--sender, {default})', f'var(--sender-text, {text_color_on(default)})'
+	rules.append(
+		f"{root} div.email {{ {_css_text(e)}text-indent: 0; "
+		f"margin: {e.get('space_before', 0)}pt {e.get('right_indent_in', 0)}in {e.get('space_after', 0)}pt {e.get('indent_in', 0)}in; "
+		f"border: {e.get('border_width', 1)}pt solid {sender}; padding-bottom: {pad}; }}")
+	rules.append(f"{root} div.email > p {{ margin: 0 {pad} {e.get('para_spacing', 0)}pt; }}")
+	rules.append(f'{root} div.email > .email-to + p {{ margin-top: {pad}; }}')
+	rules.append(f'{root} div.email > p:last-child {{ margin-bottom: 0; }}')
+	rules.append(
+		f"{root} .email-from, {root} .email-to {{ {_css_text(e, e.get('header_font'), e.get('header_bold'))}"
+		f"background: {sender}; color: {sender_text}; padding: 0 {pad}; }}")
+	rules.append(f'{root} .email-from {{ padding-top: 3pt; }}')
+	rules.append(f'{root} .email-to {{ padding-bottom: 3pt; }}')
 	rules.append(f"{root} .email-from::before {{ content: {_css_string(e['from_label'])}; }}")
 	rules.append(f"{root} .email-to::before {{ content: {_css_string(e['to_label'])}; }}")
 	f, body = b['figure'], b['body']
