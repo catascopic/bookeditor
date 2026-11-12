@@ -273,6 +273,7 @@ class _RtfBuilder:
 		self.colors = []
 		self.senders = {sender_key(s['name']): s['color'] for s in load_senders(base_dir)} if base_dir else {}
 		self.out = []
+		self.space_above = 0  # the space after the paragraph written last, in points
 
 	def color(self, color):
 		"""Index of a #rrggbb colour in the RTF colour table (which counts from 1; 0 is 'automatic')."""
@@ -302,6 +303,10 @@ class _RtfBuilder:
 
 	def para(self, style, content, before=0, after=0, font=None, bold=None, para_codes='', char_codes=''):
 		bold = style.get('bold') if bold is None else bold
+		# Space between two blocks is the larger of the first one's "after" and the second
+		# one's "before", not their sum. RTF adds them, so ask only for the difference.
+		before = max(0, (before or 0) - self.space_above)
+		self.space_above = after or 0
 		codes = ['\\pard']
 		if style.get('keep_with_next'):
 			codes.append('\\keepn')
@@ -451,10 +456,11 @@ def _css_text(style, font=None, bold=None):
 
 
 def _css_box(style):
-	# padding rather than margin, so neighbouring blocks' spacing adds up the way it does in RTF
+	# Space above and below is margin, so that where two blocks meet the browser keeps only
+	# the larger of the two (margins collapse). The RTF export does the same sum by hand.
 	return (
-		f"padding: {style.get('space_before', 0)}pt 0 {style.get('space_after', 0)}pt {style.get('indent_in', 0)}in; "
-		f"text-indent: {style.get('first_line_in', 0)}in; ")
+		f"margin: {style.get('space_before', 0)}pt 0 {style.get('space_after', 0)}pt; "
+		f"padding-left: {style.get('indent_in', 0)}in; text-indent: {style.get('first_line_in', 0)}in; ")
 
 
 def _css_string(text):
@@ -507,16 +513,12 @@ def to_css(styles=None, root='.ProseMirror', chrome=True) -> str:
 	f, body = b['figure'], b['body']
 	rules.append(
 		f"{root} figure {{ {_css_text({**body, 'align': 'center'})}"
-		f"padding: {f.get('space_before', 0)}pt {f.get('indent_in', 0)}in {f.get('space_after', 0)}pt; text-indent: 0; }}")
+		f"margin: {f.get('space_before', 0)}pt 0 {f.get('space_after', 0)}pt; "
+		f"padding: 0 {f.get('indent_in', 0)}in; text-indent: 0; }}")
 	rules.append(f"{root} figure img {{ max-width: min(100%, {f.get('max_width_in', 100)}in); }}")
 	rules.append(f"{root} figcaption {{ padding-top: {f.get('caption_gap', 0)}pt; }}")
 	if not chrome:
 		return '\n'.join(rules) + '\n'
-	# the editor's rule down the side of a journal or code block covers the text, not its spacing
-	for selector, kind in (('div.journal', 'journal'), ('pre', 'code')):
-		rules.append(
-			f"{root} {selector}::after {{ top: {b[kind].get('space_before', 0)}pt; "
-			f"bottom: {b[kind].get('space_after', 0)}pt; }}")
 	# toolbar buttons are drawn in the font of the thing they produce
 	for kind in ('body', 'chapter', 'section', 'email', 'journal', 'code'):
 		s = b[kind]
@@ -537,7 +539,7 @@ body {
 	background: #fff; color: #000; line-height: 1.25; font-variant-ligatures: none;
 	box-shadow: 0 1px 4px rgb(0 0 0 / 18%%);
 }
-body p, body h1, body h2, body pre, body hr, body figure { margin: 0; }
+body p, body h1, body h2, body pre, body hr, body figure { margin: 0; padding: 0; }
 body p, body h1, body h2, body pre, body figcaption, body .email-from, body .email-to { white-space: pre-wrap; overflow-wrap: break-word; }
 body hr { border: 0; height: auto; }
 body pre code { font: inherit; }

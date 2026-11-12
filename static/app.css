@@ -119,8 +119,8 @@ main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
 }
 
 /* A faint label in the margin beside journals, code blocks and emails. Journals and code
-   also get a rule down the side; it spans the text only, not the space above and below
-   it (styles.css sets its top and bottom from styles.json). Emails have their own box. */
+   also get a rule down the side; it spans the text only, since the space above and below
+   a block is margin, outside it. Emails have their own box. */
 .ProseMirror div.journal, .ProseMirror pre, .ProseMirror div.email { position: relative; }
 .ProseMirror div.journal::after, .ProseMirror pre::after, .ProseMirror div.email::after {
 	position: absolute;
