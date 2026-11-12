@@ -3,3 +3,5 @@ __pycache__/
 # RTF files are exports; the .html next to each one is the source
 documents/*.rtf
 .idea/
+# written by the editor from styles.json and senders.json
+documents/book.css

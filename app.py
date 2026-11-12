@@ -51,6 +51,18 @@ def write_atomic(path: Path, text: str, encoding='utf-8'):
 	os.replace(tmp, path)
 
 
+def sync_book_css():
+	"""Keep the documents folder's book.css in step with styles.json and the senders."""
+	path = docs_dir / bookdoc.BOOK_CSS
+	css = bookdoc.book_css(bookdoc.load_senders(docs_dir))
+	try:
+		if path.read_text(encoding='utf-8') == css:
+			return
+	except OSError:
+		pass
+	write_atomic(path, css)
+
+
 @app.get('/')
 def index():
 	page = (STATIC / 'index.html').read_text(encoding='utf-8')
@@ -90,7 +102,8 @@ def read_doc(name):
 	path = doc_path(name)
 	if not path.exists():
 		abort(404)
-	return Response(path.read_text(encoding='utf-8'), mimetype='text/plain')
+	# the editor only ever sees the blocks; the wrapper around them is ours to write
+	return Response(bookdoc.body_of(path.read_text(encoding='utf-8')), mimetype='text/plain')
 
 
 @app.put('/api/doc/<name>')
@@ -98,8 +111,15 @@ def save_doc(name):
 	path = doc_path(name)
 	if request.args.get('new') and path.exists():
 		abort(409, 'file already exists')
-	write_atomic(path, bookdoc.tidy_html(request.get_data(as_text=True)))
+	write_atomic(path, bookdoc.wrap_document(request.get_data(as_text=True), fallback_title=path.stem))
+	sync_book_css()
 	return jsonify(saved=str(path))
+
+
+@app.get('/documents/<path:name>')
+def read_document_file(name):
+	# the folder exactly as it is on disk: a saved chapter here looks as it would opened from Explorer
+	return send_from_directory(docs_dir, name)
 
 
 @app.get('/api/senders')
@@ -111,6 +131,7 @@ def read_senders():
 def save_senders():
 	senders = bookdoc.clean_senders(request.get_json(force=True))
 	write_atomic(docs_dir / bookdoc.SENDERS_FILE, json.dumps(senders, indent='\t', ensure_ascii=False) + '\n')
+	sync_book_css()
 	return jsonify(senders=senders)
 
 
@@ -234,6 +255,7 @@ def serve(port):
 	if not (VENDOR / 'importmap.json').exists():
 		sys.exit('TipTap is not downloaded yet. Run:  python fetch_vendor.py')
 	docs_dir.mkdir(parents=True, exist_ok=True)
+	sync_book_css()
 	print(f'Documents folder: {docs_dir}')
 	print(f'Open http://{HOST}:{port}', flush=True)
 	try:

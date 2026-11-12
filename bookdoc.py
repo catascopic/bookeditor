@@ -1,6 +1,7 @@
 """The book document format: read the saved HTML, and turn it into RTF or editor CSS.
 
-A document on disk is plain HTML with one block per line, using only these shapes:
+A document on disk is an ordinary HTML file: a short fixed <head>, then a <body> with one
+block per line, using only these shapes:
 
 	<h1>…</h1>                      chapter header
 	<h2>…</h2>                      section header
@@ -13,9 +14,15 @@ A document on disk is plain HTML with one block per line, using only these shape
 
 Inline: <strong>, <em>, <code> (inline code) and <br>.
 
+The <head> links to book.css, which the editor writes into the documents folder, so a
+chapter opened straight from disk in a browser looks the way it does in the editor.
+Everything in the <head>, and the data-from attribute on emails, is rewritten on every
+save: only the blocks in the <body> are the document.
+
 Can also be run directly:  python bookdoc.py chapter.html  ->  writes chapter.rtf
 """
 import colorsys
+import html as htmllib
 import json
 import re
 import struct
@@ -163,6 +170,50 @@ _BLOCK_BREAK = re.compile(r'(</p>|</h1>|</h2>|</pre>|</div>|</figure>|<hr[^>]*>|
 def tidy_html(html: str) -> str:
 	"""Put each block on its own line so the saved file reads and diffs well."""
 	return _BLOCK_BREAK.sub(r'\1\n', html.strip()) if html.strip() else '<p></p>\n'
+
+
+# ---------------------------------------------------------------- the file on disk
+
+DOC_FORMAT = 1
+BOOK_CSS = 'book.css'
+_BODY = re.compile(r'<body[^>]*>(.*)</body>', re.DOTALL | re.IGNORECASE)
+_EMAIL_FROM = re.compile(r'<div class="email">(\s*)<div class="email-from">(.*?)</div>', re.DOTALL)
+_TAG = re.compile(r'<[^>]+>')
+
+
+def body_of(document: str) -> str:
+	"""The blocks of a saved file. Files from before the wrapper existed are all blocks."""
+	match = _BODY.search(document)
+	return (match.group(1) if match else document).strip() + '\n'
+
+
+def _tag_sender(match):
+	# lets book.css colour the email by sender; the editor works the colour out for itself
+	key = sender_key(htmllib.unescape(_TAG.sub('', match.group(2))))
+	return (
+		f'<div class="email" data-from="{htmllib.escape(key, quote=True)}">{match.group(1)}'
+		f'<div class="email-from">{match.group(2)}</div>')
+
+
+def wrap_document(blocks_html: str, fallback_title: str) -> str:
+	"""A complete HTML file around the editor's blocks. Titled after the chapter header, if any."""
+	body = tidy_html(blocks_html)
+	title = next(
+		(' '.join(''.join(text for text, _ in block['runs']).split())
+			for block in parse_html(body) if block['type'] == 'chapter'), '') or fallback_title
+	return (
+		'<!DOCTYPE html>\n'
+		'<html lang="en">\n'
+		'<head>\n'
+		'<meta charset="utf-8">\n'
+		f'<meta name="generator" content="bookeditor {DOC_FORMAT}">\n'
+		f'<title>{htmllib.escape(title)}</title>\n'
+		f'<link rel="stylesheet" href="{BOOK_CSS}">\n'
+		'</head>\n'
+		'<body>\n'
+		f'{_EMAIL_FROM.sub(_tag_sender, body)}'
+		'</body>\n'
+		'</html>\n')
 
 
 # ---------------------------------------------------------------- blocks -> RTF
@@ -408,11 +459,15 @@ def _css_string(text):
 	return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
-def to_css(styles=None) -> str:
+def to_css(styles=None, root='.ProseMirror', chrome=True) -> str:
+	"""The look of every block type, as CSS.
+
+	root is the element holding the blocks: the editor's text area, or <body> for book.css.
+	chrome adds the rules for the editor's own page and toolbar.
+	"""
 	styles = styles or load_styles()
 	b = styles['blocks']
-	root = '.ProseMirror'
-	rules = [f".page {{ width: {styles['editor']['column_width_in']}in; }}"]
+	rules = [f".page {{ width: {styles['editor']['column_width_in']}in; }}"] if chrome else []
 	for selector, kind in (('h1', 'chapter'), ('h2', 'section'), ('> p', 'body'), ('pre', 'code'), ('hr', 'dinkus')):
 		rules.append(f'{root} {selector} {{ {_css_text(b[kind])}{_css_box(b[kind])}}}')
 	rules.append(f"{root} hr::before {{ content: {_css_string(b['dinkus']['text'])}; }}")
@@ -450,6 +505,8 @@ def to_css(styles=None) -> str:
 		f"padding: {f.get('space_before', 0)}pt {f.get('indent_in', 0)}in {f.get('space_after', 0)}pt; text-indent: 0; }}")
 	rules.append(f"{root} figure img {{ max-width: min(100%, {f.get('max_width_in', 100)}in); }}")
 	rules.append(f"{root} figcaption {{ padding-top: {f.get('caption_gap', 0)}pt; }}")
+	if not chrome:
+		return '\n'.join(rules) + '\n'
 	# toolbar buttons are drawn in the font of the thing they produce
 	for kind in ('body', 'chapter', 'section', 'email', 'journal', 'code'):
 		s = b[kind]
@@ -459,6 +516,41 @@ def to_css(styles=None) -> str:
 	rules.append(f".toolbar [data-mark=\"bold\"], .toolbar [data-mark=\"italic\"] {{ font-family: {_family(b['body']['font'])}; }}")
 	rules.append(f".toolbar [data-mark=\"code\"] {{ {inline_code_css} }}")
 	return '\n'.join(rules) + '\n'
+
+
+# What the editor's own stylesheet does for its text area, restated for a bare <body>.
+_BOOK_CSS_BASE = """\
+/* Written by the book editor from styles.json and senders.json. Edits here are overwritten. */
+html { background: #e9e7e2; }
+body {
+	box-sizing: content-box; width: %(width)sin; margin: 24px auto; padding: 0.9in 1in;
+	background: #fff; color: #000; line-height: 1.25; font-variant-ligatures: none;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 18%%);
+}
+body p, body h1, body h2, body pre, body hr, body figure { margin: 0; }
+body p, body h1, body h2, body pre, body figcaption, body .email-from, body .email-to { white-space: pre-wrap; overflow-wrap: break-word; }
+body hr { border: 0; height: auto; }
+body pre code { font: inherit; }
+body :not(pre) > code { font-size: inherit; }
+body figure img { display: block; margin: 0 auto; height: auto; }
+body div.journal > p { text-indent: 0; }
+@media print {
+	html { background: none; }
+	body { width: auto; margin: 0; padding: 0; box-shadow: none; }
+}
+"""
+
+
+def book_css(senders=(), styles=None) -> str:
+	"""The stylesheet saved next to the chapters, for reading them in a browser."""
+	styles = styles or load_styles()
+	rules = [
+		f"body div.email[data-from={_css_string(sender_key(s['name']))}] "
+		f"{{ --sender: {s['color']}; --sender-text: {text_color_on(s['color'])}; }}"
+		for s in senders]
+	return (
+		_BOOK_CSS_BASE % {'width': styles['editor']['column_width_in']}
+		+ to_css(styles, root='body', chrome=False) + '\n'.join(rules) + ('\n' if rules else ''))
 
 
 if __name__ == '__main__':
