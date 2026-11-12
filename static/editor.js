@@ -72,15 +72,18 @@ const Email = Node.create({
 	addKeyboardShortcuts() {
 		return {
 			// Backspace at the very start of From, To or the first body paragraph would otherwise
-			// try to merge the pieces of the email together. Delete the email if it is empty,
-			// and do nothing otherwise.
+			// try to merge the pieces of the email together, so it does nothing there. The one
+			// exception: when the body is empty, Backspace at its start deletes the whole email,
+			// as it does for a journal entry or code block. From and To don't count as body.
 			Backspace: () => {
 				const { selection } = this.editor.state
 				const { $from } = selection
 				if (!selection.empty || $from.parentOffset > 0 || $from.depth < 2) return false
 				const email = $from.node($from.depth - 1)
 				if (email.type.name !== 'email' || $from.index($from.depth - 1) > 2) return false
-				if (email.textContent === '') {
+				let bodyEmpty = true
+				email.forEach((child, _offset, index) => { if (index >= 2 && child.textContent !== '') bodyEmpty = false })
+				if (bodyEmpty && $from.index($from.depth - 1) === 2) {
 					const pos = $from.before($from.depth - 1)
 					return this.editor.commands.command(({ tr }) => {
 						tr.replaceWith(pos, pos + email.nodeSize, this.editor.schema.nodes.paragraph.create())
