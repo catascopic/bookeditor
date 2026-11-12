@@ -366,13 +366,14 @@ function toggleEmail(editor) {
 	const { $from, $to } = state.selection
 	const range = $from.blockRange($to)
 	if (!range || range.depth !== 0) return false
+	const { email, emailFrom, emailTo, paragraph } = state.schema.nodes
 	const paragraphs = []
 	for (let i = range.startIndex; i < range.endIndex; i++) {
 		const child = range.parent.child(i)
-		if (child.type.name !== 'paragraph') return false
-		paragraphs.push(child)
+		if (!child.isTextblock) return false // pictures, dinkuses and the like can't go inside an email
+		// an email holds only paragraphs, so a chapter header, section header or code block becomes one
+		paragraphs.push(child.type === paragraph ? child : paragraph.create(null, child.content))
 	}
-	const { email, emailFrom, emailTo } = state.schema.nodes
 	const node = email.create(null, [emailFrom.create(), emailTo.create(), ...paragraphs])
 	return editor.chain().focus().command(({ tr }) => {
 		tr.replaceWith(range.start, range.end, node)
