@@ -34,7 +34,30 @@ function emailField(name, cssClass) {
 				if ($from.parent.type.name !== name) return false
 				return this.editor.commands.setTextSelection($from.after() + 1)
 			}
-			return { Enter: next, Tab: next }
+			// Arrows past the end of From or To go to the start of the next part, rather than
+			// onto the gap between the two (a horizontal cursor that typing can't use).
+			const forward = () => {
+				const { selection } = this.editor.state
+				const { $from } = selection
+				if (!selection.empty || $from.parent.type.name !== name) return false
+				if ($from.parentOffset < $from.parent.content.size) return false
+				return this.editor.commands.setTextSelection($from.after() + 1)
+			}
+			const back = () => {
+				const { selection } = this.editor.state
+				const { $from } = selection
+				if (!selection.empty || $from.parent.type.name !== name || $from.parentOffset > 0) return false
+				if ($from.index($from.depth - 1) === 0) return false // the top of the email: leave it as it is
+				return this.editor.commands.setTextSelection($from.before() - 1)
+			}
+			return {
+				Enter: next,
+				Tab: next,
+				ArrowRight: forward,
+				ArrowDown: forward,
+				ArrowLeft: back,
+				ArrowUp: back,
+			}
 		},
 	})
 }
