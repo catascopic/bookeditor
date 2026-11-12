@@ -21,6 +21,7 @@ from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from werkzeug.serving import make_server
 
 import bookdoc
+import rtfimport
 
 HERE = Path(__file__).parent
 STATIC = HERE / 'static'
@@ -148,6 +149,25 @@ def save_image():
 		abort(415, 'only PNG and JPEG pictures can be used')
 	name = bookdoc.store_image(docs_dir / 'images', Path(request.args.get('name') or 'picture').stem, data)
 	return jsonify(src=f'images/{name}')
+
+
+@app.post('/api/import')
+def import_rtf():
+	"""Turn an uploaded RTF file into the editor's blocks, with a report. Saves only its pictures."""
+	stem = Path(request.args.get('name') or 'imported').stem
+	handle, temp = tempfile.mkstemp(suffix='.rtf')
+	try:
+		with os.fdopen(handle, 'wb') as f:
+			f.write(request.get_data())
+		blocks, report = rtfimport.import_rtf(
+			temp, store_picture=lambda data, kind: 'images/' + bookdoc.store_image(docs_dir / 'images', stem, data))
+	except ImportError as error:
+		return jsonify(error=str(error)), 500
+	except Exception as error:
+		return jsonify(error=f'the file could not be read as RTF ({type(error).__name__}: {error})'), 400
+	finally:
+		os.unlink(temp)
+	return jsonify(html=bookdoc.blocks_to_html(blocks), report=report.to_dict())
 
 
 @app.post('/api/export/<name>')

@@ -14,6 +14,8 @@
 	<div class="group">
 		<select id="file" title="Open a document"></select>
 		<button id="new" title="Create a new document">New</button>
+		<button id="import" title="Bring in an RTF chapter and check it against the book's styles">Import RTF…</button>
+		<input type="file" id="import-file" accept=".rtf,application/rtf,text/rtf" hidden>
 		<button id="save" title="Save (Ctrl+S)">Save</button>
 		<button id="export" title="Save, then write an .rtf file next to the document">Export RTF</button>
 	</div>
@@ -52,9 +54,24 @@
 		</select>
 	</div>
 </header>
-<main>
-	<div class="page"><div id="editor"></div></div>
-</main>
+<div class="workspace">
+	<main>
+		<div class="page"><div id="editor"></div></div>
+	</main>
+	<aside id="problems" hidden>
+		<section id="problems-unknown" hidden>
+			<h2>Needs a style <span id="problems-count"></span></h2>
+			<p class="hint">These paragraphs didn't match any of the book's styles and came in as body text. Click one to go to it, then pick its style, or dismiss it if body is right.</p>
+			<ol id="problem-list"></ol>
+		</section>
+		<section id="import-report" hidden>
+			<h2>Changed on import</h2>
+			<p class="hint" id="import-summary"></p>
+			<ol id="import-fixed"></ol>
+			<button id="import-report-close">Hide this list</button>
+		</section>
+	</aside>
+</div>
 <footer class="status">
 	<span id="status-file"></span>
 	<span id="status-block"></span>

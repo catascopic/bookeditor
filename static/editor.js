@@ -428,6 +428,132 @@ const BLOCKS = {
 	},
 }
 
+// ---------------------------------------------------------------- import notes
+//
+// The RTF importer leaves a note on any paragraph it could not match to a style
+// (<p data-note="…">). The notes are listed beside the page until each paragraph is given
+// a style or its note is dismissed. They are saved with the document, never exported.
+
+const Notes = Extension.create({
+	name: 'notes',
+	addGlobalAttributes() {
+		return [{
+			types: ['paragraph'],
+			attributes: {
+				note: {
+					default: null,
+					keepOnSplit: false,
+					parseHTML: element => element.getAttribute('data-note'),
+					renderHTML: attributes => (attributes.note ? { 'data-note': attributes.note } : {}),
+				},
+			},
+		}]
+	},
+})
+
+function notedParagraphs() {
+	const found = []
+	editor.state.doc.descendants((node, pos) => {
+		if (node.type.name === 'paragraph' && node.attrs.note) found.push({ pos, note: node.attrs.note, text: node.textContent })
+	})
+	return found
+}
+
+function clearNotes(from, to) {
+	const { state } = editor
+	const tr = state.tr
+	state.doc.nodesBetween(from, to, (node, pos) => {
+		if (node.type.name === 'paragraph' && node.attrs.note) tr.setNodeAttribute(pos, 'note', null)
+	})
+	if (tr.docChanged) editor.view.dispatch(tr)
+}
+
+// Choosing a style for a paragraph (Body included) answers its note.
+function applyStyle(key) {
+	const { from, to } = editor.state.selection
+	clearNotes(from, to)
+	return BLOCKS[key].run(editor)
+}
+
+let problemsShown = ''
+let importReport = null
+
+function refreshProblems() {
+	const noted = notedParagraphs()
+	const key = JSON.stringify(noted) + (importReport ? 'r' : '')
+	if (key === problemsShown) return
+	problemsShown = key
+	$('problems-unknown').hidden = !noted.length
+	$('problems-count').textContent = noted.length ? `(${noted.length})` : ''
+	$('problem-list').replaceChildren(...noted.map((item, index) => {
+		const row = document.createElement('li')
+		const go = Object.assign(document.createElement('button'), { type: 'button', className: 'problem-go' })
+		const excerpt = Object.assign(document.createElement('strong'), { textContent: item.text.slice(0, 80) || '(empty paragraph)' })
+		const note = Object.assign(document.createElement('span'), { textContent: item.note })
+		go.append(excerpt, note)
+		// positions are looked up afresh on click: the list can be older than the last keystroke
+		go.addEventListener('click', () => {
+			const target = notedParagraphs()[index]
+			if (target) editor.chain().focus().setTextSelection(target.pos + 1).scrollIntoView().run()
+		})
+		const dismiss = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Dismiss', title: 'Keep it as body text' })
+		dismiss.addEventListener('click', () => {
+			const target = notedParagraphs()[index]
+			if (target) clearNotes(target.pos, target.pos + 1)
+		})
+		row.append(go, dismiss)
+		return row
+	}))
+	$('import-report').hidden = !importReport
+	$('problems').hidden = !noted.length && !importReport
+}
+
+function showImportReport(report) {
+	importReport = report
+	if (report) {
+		const blanks = report.blank_lines ? ` Blank lines dropped: ${report.blank_lines} (spacing is automatic).` : ''
+		$('import-summary').textContent = `${report.summary}.${blanks}`
+		$('import-fixed').replaceChildren(...report.fixed.map(issue => {
+			const row = document.createElement('li')
+			const excerpt = Object.assign(document.createElement('strong'), { textContent: issue.text })
+			const message = Object.assign(document.createElement('span'), { textContent: issue.message })
+			row.append(excerpt, message)
+			return row
+		}))
+	}
+	problemsShown = ''
+	if (editor) refreshProblems()
+}
+
+async function importRtf(file) {
+	if (dirty && !confirm('Discard unsaved changes?')) return
+	const files = await refreshFiles()
+	let name = file.name.replace(/\.rtf$/i, '')
+	for (;;) {
+		name = prompt('Name for the imported document:', name)
+		if (!name) return
+		name = name.trim().replace(/\.html$/i, '')
+		if (!/^[\w\- .()]+$/.test(name)) alert('Use only letters, numbers, spaces, and - _ . ( ) in the name.')
+		else if (files.includes(name + '.html')) alert(`"${name}" already exists. Choose another name.`)
+		else break
+	}
+	let result
+	try {
+		const response = await fetch(`/api/import?name=${encodeURIComponent(name)}`, { method: 'POST', body: file })
+		result = await response.json()
+		if (!response.ok) throw new Error(result.error || response.statusText)
+	} catch (error) {
+		return say(`Could not import ${file.name}: ${error.message}`, true)
+	}
+	currentFile = name + '.html'
+	$('file').add(new Option(name, currentFile))
+	$('file').value = currentFile
+	createEditor(result.html)
+	setDirty(true) // nothing is on disk until Save
+	showImportReport(result.report)
+	say(`Imported ${file.name}. Not saved yet.`)
+}
+
 // Shortcuts for the styles that TipTap doesn't already give one (it has Ctrl+Alt+1, 2 and C).
 // Ctrl+Alt+0 is TipTap's too, but only for plain paragraphs: ours also unwraps emails and journals.
 const StyleShortcuts = Extension.create({
@@ -435,9 +561,9 @@ const StyleShortcuts = Extension.create({
 	priority: 1000,
 	addKeyboardShortcuts() {
 		return {
-			'Mod-Alt-0': () => (BLOCKS.body.run(this.editor), true),
-			'Mod-Alt-e': () => (BLOCKS.email.run(this.editor), true),
-			'Mod-Alt-j': () => (BLOCKS.journal.run(this.editor), true),
+			'Mod-Alt-0': () => (applyStyle('body'), true),
+			'Mod-Alt-e': () => (applyStyle('email'), true),
+			'Mod-Alt-j': () => (applyStyle('journal'), true),
 		}
 	},
 })
@@ -468,6 +594,7 @@ function createEditor(html) {
 			emailField('emailTo', 'email-to'),
 			Email,
 			StyleShortcuts,
+			Notes,
 			SenderColors,
 			Figure,
 		],
@@ -490,10 +617,14 @@ function createEditor(html) {
 		content: html,
 		autofocus: 'start',
 		onUpdate: () => setDirty(true),
-		onTransaction: refreshToolbar,
+		onTransaction: () => {
+			refreshToolbar()
+			refreshProblems()
+		},
 	})
 	setDirty(false)
 	refreshToolbar()
+	refreshProblems()
 }
 
 function refreshToolbar() {
@@ -555,6 +686,7 @@ async function refreshFiles() {
 
 async function openFile(name) {
 	const html = await (await api('GET', `/api/doc/${encodeURIComponent(name)}`)).text()
+	showImportReport(null)
 	currentFile = name
 	$('file').value = name
 	createEditor(html)
@@ -613,7 +745,8 @@ for (const button of document.querySelectorAll('[data-block]')) {
 	button.addEventListener('mousedown', event => event.preventDefault()) // keep the text selection
 	button.addEventListener('click', () => {
 		closeStyleMenu()
-		BLOCKS[button.dataset.block].run(editor)
+		if (button.closest('#style-menu')) applyStyle(button.dataset.block)
+		else BLOCKS[button.dataset.block].run(editor)
 	})
 }
 
@@ -655,6 +788,14 @@ $('senders-dialog').addEventListener('close', event => {
 	if (event.target.returnValue === 'save') saveSenders()
 })
 
+$('import').addEventListener('click', () => $('import-file').click())
+$('import-file').addEventListener('change', async event => {
+	const [file] = event.target.files
+	event.target.value = ''
+	if (file) await importRtf(file)
+})
+$('import-report-close').addEventListener('click', () => showImportReport(null))
+
 $('save').addEventListener('click', save)
 $('export').addEventListener('click', exportRtf)
 $('new').addEventListener('click', newFile)
@@ -695,4 +836,4 @@ if (files.length) {
 	say('No documents yet. Click New to start one.')
 	createEditor('<p></p>')
 }
-window.bookEditor = { get editor() { return editor }, addPicture } // handy in the browser console
+window.bookEditor = { get editor() { return editor }, addPicture, importRtf } // handy in the browser console

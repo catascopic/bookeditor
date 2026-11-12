@@ -172,11 +172,15 @@ class Report:
 	unknown: list = field(default_factory=list)
 
 	def summary(self):
-		parts = [f'{self.matched} match']
-		if self.fixed:
-			parts.append(f'{len(self.fixed)} normalised')
-		parts.append(f'{len(self.unknown)} need a style' if len(self.unknown) != 1 else '1 needs a style')
-		return f"{self.paragraphs} paragraphs: {', '.join(parts)}"
+		# counted by paragraph: one paragraph can collect several notes
+		unknown = {issue.number for issue in self.unknown}
+		fixed = {issue.number for issue in self.fixed} - unknown
+		exact = max(0, self.paragraphs - len(unknown) - len(fixed))
+		parts = [f'{exact} match']
+		if fixed:
+			parts.append(f'{len(fixed)} normalised')
+		parts.append('1 needs a style' if len(unknown) == 1 else f'{len(unknown)} need a style')
+		return f"{self.paragraphs} paragraph{'' if self.paragraphs == 1 else 's'}: {', '.join(parts)}"
 
 	def to_dict(self):
 		return {
@@ -440,7 +444,7 @@ def print_report(name, report, out=sys.stdout):
 			print(f'    paragraph {issue.number}: "{issue.text}"', file=out)
 			print(f'      {issue.message}', file=out)
 	if report.blank_lines:
-		print(f'  {report.blank_lines} blank lines dropped (spacing is automatic).', file=out)
+		print(f"  {report.blank_lines} blank line{'' if report.blank_lines == 1 else 's'} dropped (spacing is automatic).", file=out)
 
 
 def main(argv=None):
