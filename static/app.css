@@ -255,6 +255,9 @@ main { flex: 1; min-width: 0; overflow: auto; padding: 24px 16px 48px; }
 }
 #status-message { margin-left: auto; color: var(--ink); }
 #status-message.error { color: #a12626; }
+#smart-quotes { height: auto; padding: 0 4px; border: 0; background: none; color: inherit; font: inherit; }
+#smart-quotes:hover { color: var(--ink); text-decoration: underline; }
+#smart-quotes.off { color: var(--flag); }
 
 /* ---- senders dialog ---- */
 

@@ -116,16 +116,63 @@ const Dinkus = HorizontalRule.extend({
 
 // -- becomes an en dash and --- an em dash, as in Google Docs: once the next character is
 // typed, which is what lets --- get past --. Backspace straight afterwards puts the hyphens
-// back. (TipTap leaves code blocks and inline code alone.)
-const Dashes = Extension.create({
-	name: 'dashes',
-	addInputRules: () => [new InputRule({
-		find: /(?<!-)(-{2,3})([^-])$/,
-		handler: ({ state, range, match }) => {
-			state.tr.insertText((match[1].length === 2 ? '\u2013' : '\u2014') + match[2], range.from, range.to)
-		},
-	})],
+// back. (TipTap leaves code blocks and inline code alone, for this and the quotes below.)
+const dashes = new InputRule({
+	find: /(?<!-)(-{2,3})([^-])$/,
+	handler: ({ state, range, match }) => {
+		const dash = match[1].length === 2 ? '\u2013' : '\u2014'
+		state.tr.insertText(dash + curl(match[2], dash), range.from, range.to) // --" is a dash and an opening quote
+	},
 })
+
+// Smart quotes: a typed " or ' becomes a curly one. It opens at the start of a line or after
+// a space, bracket, dash or opening quote, and closes (or is an apostrophe) anywhere else.
+// Ctrl+Shift+" turns them on and off, remembered in this browser; Backspace straight after
+// one puts the straight quote back.
+let smartQuotes = recall('smartQuotes') !== 'off'
+const OPENS_AFTER = /^$|[\s([{\u201c\u2018\u2013\u2014]$/
+
+function curl(char, before) {
+	if (!smartQuotes || (char !== '"' && char !== "'")) return char
+	const opening = OPENS_AFTER.test(before)
+	return char === '"' ? (opening ? '\u201c' : '\u201d') : (opening ? '\u2018' : '\u2019')
+}
+
+const quotes = new InputRule({
+	find: /["']$/,
+	handler: ({ state, range, match }) => {
+		if (!smartQuotes) return null
+		const $from = state.doc.resolve(range.from)
+		// the character before; a line break counts as a space, a footnote marker as a letter
+		const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset, null,
+			leaf => leaf.type.name === 'hardBreak' ? '\n' : 'x')
+		state.tr.insertText(curl(match[0], before), range.from, range.to)
+	},
+})
+
+// Both rules in one extension, dashes first: the first rule that matches a keystroke wins,
+// and the " in --" belongs to the dash rule.
+const Typing = Extension.create({
+	name: 'typing',
+	addInputRules: () => [dashes, quotes],
+	addKeyboardShortcuts: () => ({
+		'Mod-Shift-"': toggleSmartQuotes,
+		"Mod-Shift-'": toggleSmartQuotes, // the same keys, as some keyboards report them
+	}),
+})
+
+function toggleSmartQuotes() {
+	smartQuotes = !smartQuotes
+	remember('smartQuotes', smartQuotes ? 'on' : 'off')
+	showSmartQuotes()
+	say(smartQuotes ? 'Smart quotes on' : 'Smart quotes off: quotes stay straight')
+	return true
+}
+
+function showSmartQuotes() {
+	$('smart-quotes').textContent = smartQuotes ? '\u201cSmart quotes\u201d on' : '"Smart quotes" off'
+	$('smart-quotes').classList.toggle('off', !smartQuotes)
+}
 
 // ---------------------------------------------------------------- footnotes
 //
@@ -849,7 +896,7 @@ function createEditor(html) {
 				horizontalRule: false, // replaced by Dinkus
 			}),
 			Dinkus,
-			Dashes,
+			Typing,
 			Journal,
 			emailField('emailFrom', 'email-from'),
 			emailField('emailTo', 'email-to'),
@@ -1066,6 +1113,10 @@ for (const button of document.querySelectorAll('[data-mark]')) {
 	button.addEventListener('mousedown', event => event.preventDefault())
 	button.addEventListener('click', () => applyMark(button.dataset.mark))
 }
+
+$('smart-quotes').addEventListener('mousedown', event => event.preventDefault())
+$('smart-quotes').addEventListener('click', toggleSmartQuotes)
+showSmartQuotes()
 
 $('footnote').addEventListener('mousedown', event => event.preventDefault())
 $('footnote').addEventListener('click', addFootnote)
