@@ -118,16 +118,16 @@ main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
 	pointer-events: none;
 }
 
-/* a faint labelled rule down the side of journals and code blocks (emails have their own box) */
-.ProseMirror div.journal, .ProseMirror pre { position: relative; }
-.ProseMirror div.journal::after, .ProseMirror pre::after {
-	content: attr(data-label);
+/* A faint label in the margin beside journals, code blocks and emails. Journals and code
+   also get a rule down the side; it spans the text only, not the space above and below
+   it (styles.css sets its top and bottom from styles.json). Emails have their own box. */
+.ProseMirror div.journal, .ProseMirror pre, .ProseMirror div.email { position: relative; }
+.ProseMirror div.journal::after, .ProseMirror pre::after, .ProseMirror div.email::after {
 	position: absolute;
 	left: -0.85in;
 	top: 0;
 	bottom: 0;
 	width: 0.75in;
-	padding-top: inherit;
 	border-right: 2px solid var(--line);
 	color: var(--muted);
 	font: 9px/1.6 system-ui, sans-serif;
@@ -140,6 +140,8 @@ main { flex: 1; overflow: auto; padding: 24px 16px 48px; }
 }
 .ProseMirror pre::after { content: "code"; }
 .ProseMirror div.journal::after { content: "journal"; }
+/* the email's left edge is its box, half an inch in, so its label is placed from there */
+.ProseMirror div.email::after { content: "email"; left: calc(-0.85in - 8px); border-right: 0; transform: none; }
 
 .ProseMirror-gapcursor { position: relative; }
 

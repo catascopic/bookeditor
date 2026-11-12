@@ -507,6 +507,11 @@ def to_css(styles=None, root='.ProseMirror', chrome=True) -> str:
 	rules.append(f"{root} figcaption {{ padding-top: {f.get('caption_gap', 0)}pt; }}")
 	if not chrome:
 		return '\n'.join(rules) + '\n'
+	# the editor's rule down the side of a journal or code block covers the text, not its spacing
+	for selector, kind in (('div.journal', 'journal'), ('pre', 'code')):
+		rules.append(
+			f"{root} {selector}::after {{ top: {b[kind].get('space_before', 0)}pt; "
+			f"bottom: {b[kind].get('space_after', 0)}pt; }}")
 	# toolbar buttons are drawn in the font of the thing they produce
 	for kind in ('body', 'chapter', 'section', 'email', 'journal', 'code'):
 		s = b[kind]
